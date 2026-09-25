@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-25-video-platform-microservices-design.md
+  s_17a5063aa38dd4::t_ff9cf49ab2d72d 282
+  s_17a5063aa38dd4::t_a32861101ba17c 233-272
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d976daf19fa038a03c86974bf44fe9d7f25ce082",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

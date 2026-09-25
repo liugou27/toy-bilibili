@@ -11,6 +11,10 @@ spring:
     import:
       - optional:nacos:common.yml
       - optional:nacos:toys-gateway.yml
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
   cloud:
     nacos:
       server-addr: 127.0.0.1:8848
@@ -39,14 +43,32 @@ spring:
               uri: lb://toys-user-service
               predicates:
                 - Path=/api/auth/**,/api/users/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 10
+                    redis-rate-limiter.burstCapacity: 20
+                    key-resolver: "#{@userKeyResolver}"
             - id: video-service
               uri: lb://toys-video-service
               predicates:
                 - Path=/api/videos/**,/api/my/videos/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 50
+                    redis-rate-limiter.burstCapacity: 100
+                    key-resolver: "#{@userKeyResolver}"
             - id: moderation-service
               uri: lb://toys-moderation-service
               predicates:
                 - Path=/api/admin/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 20
+                    redis-rate-limiter.burstCapacity: 40
+                    key-resolver: "#{@userKeyResolver}"
             - id: minio-media
               uri: http://127.0.0.1:9000
               predicates:
@@ -64,8 +86,10 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,gateway
 
 logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
   pattern:
     console: "%d{HH:mm:ss.SSS} %-5level [%X{traceId:-}] %logger{36} - %msg%n"

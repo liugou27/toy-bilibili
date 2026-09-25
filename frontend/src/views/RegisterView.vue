@@ -1,8 +1,9 @@
 <template>
   <div class="auth-page">
-    <el-card shadow="never" class="auth-card">
-      <template #header><b>注册账号</b></template>
-      <el-form :model="form" @keyup.enter="submit">
+    <div class="auth-card">
+      <h1 class="auth-title">注册账号</h1>
+      <p class="auth-subtitle">加入社区,分享你的每一个瞬间。</p>
+      <el-form class="auth-form" :model="form" @keyup.enter="submit">
         <el-form-item>
           <el-input v-model="form.username" placeholder="用户名(3-32 位字母数字下划线)" />
         </el-form-item>
@@ -12,13 +13,13 @@
         <el-form-item>
           <el-input v-model="form.password2" type="password" placeholder="确认密码" show-password />
         </el-form-item>
-        <el-button type="primary" style="width: 100%" :loading="loading" @click="submit">注册并登录</el-button>
-        <div class="tip">
+        <el-button class="auth-submit" type="primary" size="large" :loading="loading" @click="submit">注册并登录</el-button>
+        <div class="auth-switch">
           已有账号?
           <router-link :to="{ path: '/login', query: $route.query }">去登录</router-link>
         </div>
       </el-form>
-    </el-card>
+    </div>
   </div>
 </template>
 
@@ -61,9 +62,3 @@ async function submit() {
   }
 }
 </script>
-
-<style scoped>
-.auth-page { display: flex; justify-content: center; padding-top: 60px; }
-.auth-card { width: 380px; }
-.tip { margin-top: 12px; font-size: 13px; color: #999; text-align: center; }
-</style>

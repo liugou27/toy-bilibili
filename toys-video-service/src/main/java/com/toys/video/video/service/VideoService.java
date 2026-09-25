@@ -54,6 +54,11 @@ public class VideoService {
     private final SearchGateway searchGateway;
     private final RecommendGateway recommendGateway;
     private final UserInternalClient userInternalClient;
+    private final org.springframework.data.redis.core.StringRedisTemplate redis;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    private static final String LIST_CACHE_PREFIX = "cache:videos:list:";
+    private static final java.time.Duration LIST_CACHE_TTL = java.time.Duration.ofSeconds(60);
 
     @Value("${toys.upload.allowed-exts:mp4,mkv,mov,avi,flv}")
     private String allowedExts;
@@ -113,11 +118,45 @@ public class VideoService {
         return new com.toys.video.video.dto.UploadResponse(video.getId(), video.getStatus());
     }
 
+    /** 首页列表:cache-aside,60s TTL;状态变更/新投稿时整组失效。 */
     public PageResult<VideoCard> publishedPage(long page, long size, String keyword) {
+        String key = listCacheKey(page, size, keyword);
+        try {
+            String cached = redis.opsForValue().get(key);
+            if (cached != null) {
+                return objectMapper.readValue(cached,
+                        new com.fasterxml.jackson.core.type.TypeReference<PageResult<VideoCard>>() {});
+            }
+        } catch (Exception e) {
+            log.warn("list cache read failed, fall back to db: {}", e.getMessage());
+        }
         IPage<Video> p = (keyword == null || keyword.isBlank())
                 ? recommendGateway.recommend(page, size)
                 : searchGateway.searchPublished(keyword, page, size);
-        return toCards(p);
+        PageResult<VideoCard> result = toCards(p);
+        try {
+            redis.opsForValue().set(key, objectMapper.writeValueAsString(result), LIST_CACHE_TTL);
+        } catch (Exception e) {
+            log.warn("list cache write failed: {}", e.getMessage());
+        }
+        return result;
+    }
+
+    private String listCacheKey(long page, long size, String keyword) {
+        String kw = keyword == null ? "" : keyword.trim().toLowerCase(java.util.Locale.ROOT);
+        return LIST_CACHE_PREFIX + page + ":" + size + ":" + Integer.toHexString(kw.hashCode());
+    }
+
+    /** 列表缓存整组失效:任何会影响首页可见内容的写入后调用。 */
+    private void evictListCache() {
+        try {
+            java.util.Set<String> keys = redis.keys(LIST_CACHE_PREFIX + "*");
+            if (keys != null && !keys.isEmpty()) {
+                redis.delete(keys);
+            }
+        } catch (Exception e) {
+            log.warn("list cache evict failed: {}", e.getMessage());
+        }
     }
 
     public VideoDetail detail(Long id, Long requesterId, String requesterRole) {
@@ -177,6 +216,7 @@ public class VideoService {
             throw BizException.of(ErrorCode.VIDEO_STATUS_CONFLICT);
         }
         log.info("video {} status {} -> {}", id, current, target);
+        evictListCache();
         if (target == VideoStatus.APPROVED) {
             eventPublisher.publishApproved(new VideoApprovedEvent(video.getId(), video.getObjectKey()));
         }

@@ -1,0 +1,152 @@
+/* ============ toys-video 设计基线(Apple 风格) ============ */
+:root {
+  --bg: #fbfbfd;
+  --surface: #ffffff;
+  --text: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-tertiary: #86868b;
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --danger: #e30000;
+  --success: #248a3d;
+  --warning: #b25000;
+  --hairline: rgba(0, 0, 0, 0.08);
+  --radius-card: 18px;
+  --radius-button: 980px;
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0 12px 40px rgba(0, 0, 0, 0.12);
+  --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3 { letter-spacing: -0.02em; font-weight: 600; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Element Plus 全局风格覆写 */
+:root {
+  --el-color-primary: #0071e3;
+  --el-border-radius-base: 12px;
+  --el-font-family: var(--font);
+}
+
+.el-button { border-radius: var(--radius-button); font-weight: 500; transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease); }
+.el-button:not(.is-text):not(.is-link):hover { transform: scale(1.02); }
+.el-button:not(.is-text):not(.is-link):active { transform: scale(0.98); }
+.el-button--large { border-radius: var(--radius-button); }
+
+.el-card { border-radius: var(--radius-card); border: none; box-shadow: var(--shadow-card) !important; }
+
+.el-table { --el-table-border-color: var(--hairline); }
+.el-table th.el-table__cell { font-weight: 600; color: var(--text-secondary); }
+
+.el-dialog { border-radius: 20px; }
+
+.el-tag { border-radius: var(--radius-button); border: none; font-weight: 500; }
+
+/* 页面路由过渡 */
+.route-fade-enter-active { transition: opacity 0.45s var(--ease), transform 0.45s var(--ease); }
+.route-fade-leave-active { transition: opacity 0.2s ease; }
+.route-fade-enter-from { opacity: 0; transform: translateY(12px); }
+.route-fade-leave-to { opacity: 0; }
+
+/* 滚动渐入 */
+.reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.7s var(--ease), transform 0.7s var(--ease); }
+.reveal.is-visible { opacity: 1; transform: none; }
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.18); border-radius: 5px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ============ 页面级组件(发现/播放/登录注册共用) ============ */
+
+/* Hero 大标题排版 */
+.hero-title {
+  margin: 0;
+  font-size: clamp(36px, 5vw, 60px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+}
+.hero-subtitle {
+  margin: 14px 0 0;
+  font-size: 21px;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+  color: var(--text-secondary);
+}
+
+/* 播放页播放器通栏需要,防止 100vw 触发横向滚动 */
+body { overflow-x: hidden; }
+
+/* 登录 / 注册:hairline 居中卡片 */
+.auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 240px);
+  padding: 16px 0 48px;
+}
+.auth-card {
+  width: 400px;
+  max-width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 24px;
+  padding: 44px 40px 36px;
+}
+.auth-title {
+  margin: 0 0 8px;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+.auth-subtitle {
+  margin: 0 0 28px;
+  font-size: 15px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.auth-form .el-form-item { margin-bottom: 16px; }
+.auth-form .el-input__wrapper {
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  background: #f5f5f7;
+  box-shadow: 0 0 0 1px transparent inset;
+  transition: box-shadow 0.3s var(--ease), background 0.3s var(--ease);
+}
+.auth-form .el-input__wrapper:hover { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12) inset; }
+.auth-form .el-input__wrapper.is-focus {
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--accent) inset, 0 0 0 4px rgba(0, 113, 227, 0.12);
+}
+.auth-form .el-input__inner { height: 44px; font-size: 15px; }
+.auth-form .el-input__inner::placeholder { color: var(--text-tertiary); }
+.auth-submit { width: 100%; height: 44px; margin-top: 8px; font-size: 16px; }
+.auth-switch {
+  margin-top: 20px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-align: center;
+}

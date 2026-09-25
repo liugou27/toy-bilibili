@@ -34,5 +34,10 @@ public class ModerationReport {
 
     private LocalDateTime decidedAt;
 
+    /** 认领人(软锁:10 分钟未决策自动释放)。 */
+    private Long claimedBy;
+
+    private LocalDateTime claimedAt;
+
     private LocalDateTime createdAt;
 }

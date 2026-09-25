@@ -9,6 +9,8 @@ public record ModerationQueueItem(
         Long ownerId,
         String originalFilename,
         Long sizeBytes,
+        Long claimedBy,
+        LocalDateTime claimedAt,
         LocalDateTime createdAt
 ) {
 }

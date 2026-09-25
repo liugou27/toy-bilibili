@@ -82,8 +82,75 @@ public class ModerationService {
         );
     }
 
+    /** 审核动作前置校验:视频状态已被他人推进时直接拒绝,避免报告已改而状态回写失败的不一致。 */
+    private void assertVideoPending(Long videoId) {
+        var resp = videoInternalClient.batch(List.of(videoId));
+        if (resp == null || resp.code() != 0 || resp.data() == null || resp.data().isEmpty()) {
+            throw BizException.of(ErrorCode.NOT_FOUND, "视频不存在");
+        }
+        if (!VideoStatus.UNDER_REVIEW.name().equals(resp.data().get(0).status())) {
+            throw BizException.of(ErrorCode.MODERATION_NOT_PENDING);
+        }
+    }
+
+    // ==================== 审核认领(并发冲突控制) ====================
+    //
+    // 语义:认领是软锁(显示谁在处理,10 分钟未决策自动释放);
+    // 决策是硬锁——条件更新保证同一单只有第一个决策生效,第二人收到明确冲突提示。
+
+    private static final long CLAIM_TIMEOUT_MINUTES = 10;
+
+    /** 认领审核任务:可重复认领自己;他人已认领且未超时则冲突。 */
+    public void claim(Long videoId, Long reviewerId) {
+        ModerationReport report = requirePendingReport(videoId);
+        if (report.getClaimedBy() != null && !report.getClaimedBy().equals(reviewerId)
+                && !claimExpired(report)) {
+            throw BizException.of(ErrorCode.MODERATION_NOT_PENDING, "该任务已被其他审核员认领");
+        }
+        reportMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ModerationReport>()
+                .eq(ModerationReport::getId, report.getId())
+                .eq(ModerationReport::getDecision, "PENDING")
+                .and(w -> w.isNull(ModerationReport::getClaimedBy)
+                        .or().eq(ModerationReport::getClaimedBy, reviewerId)
+                        .or().lt(ModerationReport::getClaimedAt,
+                                LocalDateTime.now().minusMinutes(CLAIM_TIMEOUT_MINUTES)))
+                .set(ModerationReport::getClaimedBy, reviewerId)
+                .set(ModerationReport::getClaimedAt, LocalDateTime.now()));
+    }
+
+    /** 决策前校验认领归属:被他人认领且未超时时,决策人必须是认领人(或认领已过期)。 */
+    private void assertClaimableBy(ModerationReport report, Long reviewerId) {
+        if (report.getClaimedBy() != null
+                && !report.getClaimedBy().equals(reviewerId)
+                && !claimExpired(report)) {
+            throw BizException.of(ErrorCode.MODERATION_NOT_PENDING, "该任务已被其他审核员认领");
+        }
+    }
+
+    private boolean claimExpired(ModerationReport report) {
+        return report.getClaimedAt() == null
+                || report.getClaimedAt().isBefore(LocalDateTime.now().minusMinutes(CLAIM_TIMEOUT_MINUTES));
+    }
+
+    /** 定时释放超时认领,任务回到可认领池。 */
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 60_000)
+    public void releaseExpiredClaims() {
+        int rows = reportMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ModerationReport>()
+                .eq(ModerationReport::getDecision, "PENDING")
+                .isNotNull(ModerationReport::getClaimedBy)
+                .lt(ModerationReport::getClaimedAt,
+                        LocalDateTime.now().minusMinutes(CLAIM_TIMEOUT_MINUTES))
+                .set(ModerationReport::getClaimedBy, null)
+                .set(ModerationReport::getClaimedAt, null));
+        if (rows > 0) {
+            log.info("released {} expired review claims", rows);
+        }
+    }
+
     public void approve(Long videoId, Long reviewerId) {
         assertVideoPending(videoId);
+        ModerationReport report = requirePendingReport(videoId);
+        assertClaimableBy(report, reviewerId);
         transitionDecision(videoId, reviewerId, "APPROVED", null);
         applyStatus(videoId, new VideoInternalClient.InternalStatusUpdate(
                 VideoStatus.APPROVED.name(), null, null, null, null));
@@ -95,21 +162,21 @@ public class ModerationService {
             throw BizException.of(ErrorCode.PARAM_INVALID, "拒绝原因必填");
         }
         assertVideoPending(videoId);
+        ModerationReport report = requirePendingReport(videoId);
+        assertClaimableBy(report, reviewerId);
         transitionDecision(videoId, reviewerId, "REJECTED", reason.trim());
         applyStatus(videoId, new VideoInternalClient.InternalStatusUpdate(
                 VideoStatus.REJECTED.name(), null, null, null, reason.trim()));
         log.info("video {} rejected by {}: {}", videoId, reviewerId, reason.trim());
     }
 
-    /** 审核动作前置校验:视频状态已被他人推进时直接拒绝,避免报告已改而状态回写失败的不一致。 */
-    private void assertVideoPending(Long videoId) {
-        var resp = videoInternalClient.batch(List.of(videoId));
-        if (resp == null || resp.code() != 0 || resp.data() == null || resp.data().isEmpty()) {
-            throw BizException.of(ErrorCode.NOT_FOUND, "视频不存在");
-        }
-        if (!VideoStatus.UNDER_REVIEW.name().equals(resp.data().get(0).status())) {
+    private ModerationReport requirePendingReport(Long videoId) {
+        ModerationReport report = reportMapper.selectOne(new LambdaQueryWrapper<ModerationReport>()
+                .eq(ModerationReport::getVideoId, videoId));
+        if (report == null || !"PENDING".equals(report.getDecision())) {
             throw BizException.of(ErrorCode.MODERATION_NOT_PENDING);
         }
+        return report;
     }
 
     private void transitionDecision(Long videoId, Long reviewerId, String decision, String reason) {
@@ -124,9 +191,11 @@ public class ModerationService {
                 .set(ModerationReport::getDecision, decision)
                 .set(ModerationReport::getReviewerId, reviewerId)
                 .set(ModerationReport::getRejectReason, reason)
+                .set(ModerationReport::getClaimedBy, null)
+                .set(ModerationReport::getClaimedAt, null)
                 .set(ModerationReport::getDecidedAt, LocalDateTime.now()));
         if (rows == 0) {
-            throw BizException.of(ErrorCode.MODERATION_NOT_PENDING);
+            throw BizException.of(ErrorCode.MODERATION_NOT_PENDING, "该任务已被其他审核员处理");
         }
     }
 

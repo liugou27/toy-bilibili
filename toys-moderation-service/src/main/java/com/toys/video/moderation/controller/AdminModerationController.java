@@ -60,6 +60,8 @@ public class AdminModerationController {
                             b == null ? null : b.ownerId(),
                             b == null ? null : b.originalFilename(),
                             b == null ? null : b.sizeBytes(),
+                            r.getClaimedBy(),
+                            r.getClaimedAt(),
                             r.getCreatedAt());
                 })
                 .toList();
@@ -70,6 +72,13 @@ public class AdminModerationController {
     public R<Map<String, Object>> detail(@PathVariable Long videoId) {
         requireAdmin();
         return R.ok(moderationService.reviewDetail(videoId));
+    }
+
+    @PostMapping("/{videoId}/claim")
+    public R<Void> claim(@PathVariable Long videoId) {
+        requireAdmin();
+        moderationService.claim(videoId, UserContext.userId());
+        return R.ok();
     }
 
     @PostMapping("/{videoId}/approve")

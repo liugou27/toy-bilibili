@@ -1,21 +1,22 @@
 <template>
   <div class="auth-page">
-    <el-card shadow="never" class="auth-card">
-      <template #header><b>登录 toys-video</b></template>
-      <el-form :model="form" @keyup.enter="submit">
+    <div class="auth-card">
+      <h1 class="auth-title">登录 toys-video</h1>
+      <p class="auth-subtitle">欢迎回来,精彩继续。</p>
+      <el-form class="auth-form" :model="form" @keyup.enter="submit">
         <el-form-item>
           <el-input v-model="form.username" placeholder="用户名" />
         </el-form-item>
         <el-form-item>
           <el-input v-model="form.password" type="password" placeholder="密码" show-password />
         </el-form-item>
-        <el-button type="primary" style="width: 100%" :loading="loading" @click="submit">登录</el-button>
-        <div class="tip">
+        <el-button class="auth-submit" type="primary" size="large" :loading="loading" @click="submit">登录</el-button>
+        <div class="auth-switch">
           没有账号?
           <router-link :to="{ path: '/register', query: $route.query }">去注册</router-link>
         </div>
       </el-form>
-    </el-card>
+    </div>
   </div>
 </template>
 
@@ -47,9 +48,3 @@ async function submit() {
   }
 }
 </script>
-
-<style scoped>
-.auth-page { display: flex; justify-content: center; padding-top: 60px; }
-.auth-card { width: 380px; }
-.tip { margin-top: 12px; font-size: 13px; color: #999; text-align: center; }
-</style>

@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-09-25-video-platform-microservices.md
+  s_17a5063aa38dd4::t_ab5875d211fbb1 1-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "557635f6c393cfd88e232a6c4a200cf66ed6d3ae",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

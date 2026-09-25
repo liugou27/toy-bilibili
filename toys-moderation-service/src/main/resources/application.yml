@@ -1,0 +1,50 @@
+server:
+  port: 8103
+
+spring:
+  application:
+    name: toys-moderation-service
+  config:
+    import:
+      - optional:nacos:common.yml
+      - optional:nacos:toys-moderation-service.yml
+  cloud:
+    nacos:
+      server-addr: 127.0.0.1:8848
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5433/toys_video?currentSchema=moderation_db
+    username: postgres
+    password: ""
+  flyway:
+    enabled: true
+    default-schema: moderation_db
+    schemas: moderation_db
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+rocketmq:
+  name-server: 127.0.0.1:9876
+  consumer:
+    # 消费重试 16 次约 4.6h 后进死信;拉取间隔与批次保持默认
+    pull-batch-size: 16
+
+toys:
+  minio:
+    endpoint: http://127.0.0.1:9000
+    access-key: minioadmin
+    secret-key: minioadmin
+  scripts:
+    dir: ${TOYS_SCRIPTS_DIR:/Users/dsy/Desktop/dev/works/toys/scripts}
+    python-bin: python3
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{traceId:-}] %logger{36} - %msg%n"

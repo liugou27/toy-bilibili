@@ -32,7 +32,7 @@
         <mybatis-plus.version>3.5.12</mybatis-plus.version>
         <minio.version>8.5.17</minio.version>
         <jjwt.version>0.12.6</jjwt.version>
-        <rocketmq-spring.version>2.3.1</rocketmq-spring.version>
+        <rocketmq-spring.version>2.3.6</rocketmq-spring.version>
     </properties>
 
     <dependencyManagement>

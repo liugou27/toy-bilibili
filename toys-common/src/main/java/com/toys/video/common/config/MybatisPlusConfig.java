@@ -1,4 +1,4 @@
-package com.toys.video.video.config;
+package com.toys.video.common.config;
 
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerIntercept
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/** MyBatis-Plus 公共配置:分页拦截器(PG 方言)。 */
 @Configuration
 public class MybatisPlusConfig {
 

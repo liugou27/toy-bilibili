@@ -1,0 +1,33 @@
+docs/superpowers/specs/2026-09-25-video-platform-microservices-design.md
+  s_17a5063aa38dd4::t_c5ef2b6c7b4772 39
+  s_17a5063aa38dd4::t_82ae40dbee3f6b 62,65
+frontend/src/api.js
+  s_17a5063aa38dd4::t_5dceca23d9798e 19,21
+toys-moderation-service/src/main/java/com/toys/video/moderation/service/ModerationService.java
+  s_17a5063aa38dd4::t_0d210c69909778 47-53,62,66
+toys-common/src/main/java/com/toys/video/common/config/JacksonConfig.java
+  s_17a5063aa38dd4::t_329d404fb7e7a0 1-20
+README.md
+  s_17a5063aa38dd4::t_3fb4af65e584a7 1-66
+toys-gateway/src/main/java/com/toys/video/gateway/filter/AuthGlobalFilter.java
+  s_17a5063aa38dd4::t_f76db83b11234f 102-105
+  s_17a5063aa38dd4::t_0d26576a19a3e3 46-49
+deploy/README.md
+  s_17a5063aa38dd4::t_3d2a9eac4a757b 1-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a5aa39eb874570a93fa748c85b3b097199e3d319",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

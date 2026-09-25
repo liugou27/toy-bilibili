@@ -1,0 +1,129 @@
+toys-api/src/main/java/com/toys/video/api/enums/VideoStatus.java
+  s_17a5063aa38dd4::t_6c7be3d8fc136f 1-17
+toys-common/src/main/java/com/toys/video/common/context/UserContext.java
+  s_17a5063aa38dd4::t_74905a182d9248 1-29
+toys-common/src/main/java/com/toys/video/common/api/PageResult.java
+  s_17a5063aa38dd4::t_28f6954ec38574 1-6
+toys-gateway/src/main/java/com/toys/video/gateway/filter/AuthGlobalFilter.java
+  s_17a5063aa38dd4::t_16182b75d851e9 1-114
+scripts/transcode.py
+  s_17a5063aa38dd4::t_d41e01f634f8bd 1-112
+toys-common/src/main/java/com/toys/video/common/constant/Headers.java
+  s_17a5063aa38dd4::t_e9d82c70820bdc 1-14
+toys-common/src/main/java/com/toys/video/common/exception/ErrorCode.java
+  s_17a5063aa38dd4::t_b4252ea111ac89 1-39
+toys-user-service/src/main/java/com/toys/video/user/mapper/UserMapper.java
+  s_17a5063aa38dd4::t_1fff00dffc3c46 1-9
+toys-video-service/src/main/java/com/toys/video/video/VideoApplication.java
+  s_17a5063aa38dd4::t_120638b79081b8 1-16
+pom.xml
+  s_17a5063aa38dd4::t_cbe5e9657bd387 1-127
+toys-user-service/src/main/java/com/toys/video/user/service/AuthService.java
+  s_17a5063aa38dd4::t_4ea4e773d81c8d 1-82
+deploy/maven-settings.xml
+  s_17a5063aa38dd4::t_315e0fd0433b4b 1-21
+toys-user-service/src/main/java/com/toys/video/user/config/SecurityConfig.java
+  s_17a5063aa38dd4::t_4f2415880c73d5 1-23
+toys-user-service/src/main/java/com/toys/video/user/UserApplication.java
+  s_17a5063aa38dd4::t_b2458c78653735 1-14
+toys-user-service/src/main/java/com/toys/video/user/dto/LoginResponse.java
+  s_17a5063aa38dd4::t_48699a54903509 1-4
+toys-user-service/pom.xml
+  s_17a5063aa38dd4::t_cd34a038fdc497 1-81
+toys-gateway/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_ee8ab3c59a947f 1-62
+toys-common/src/main/java/com/toys/video/common/util/Snowflake.java
+  s_17a5063aa38dd4::t_e34af2dde9bc94 1-63
+toys-common/src/main/java/com/toys/video/common/web/UserContextFilter.java
+  s_17a5063aa38dd4::t_89d4655b24dd3d 1-35
+toys-user-service/src/main/java/com/toys/video/user/controller/AuthController.java
+  s_17a5063aa38dd4::t_f129c3ecf2c06a 1-31
+toys-user-service/src/main/resources/db/migration/V1__init_user.sql
+  s_17a5063aa38dd4::t_deea07a31ff6c8 1-11
+toys-user-service/src/main/java/com/toys/video/user/controller/UserController.java
+  s_17a5063aa38dd4::t_1aa762b08b9362 1-29
+toys-common/src/main/java/com/toys/video/common/exception/BizException.java
+  s_17a5063aa38dd4::t_ae4077b539fe28 1-23
+deploy/docker-compose.yml
+  s_17a5063aa38dd4::t_2a512f970c529c 56-59
+  s_17a5063aa38dd4::t_9fce8cd0840a75 8-10
+  s_17a5063aa38dd4::t_6c25835f03aeb8 18
+  s_17a5063aa38dd4::t_47c5f50e0a2d46 1-7,11-17,19-55,60-62
+toys-user-service/src/main/java/com/toys/video/user/dto/UserInfo.java
+  s_17a5063aa38dd4::t_cd9357f397294f 1-4
+toys-user-service/src/main/java/com/toys/video/user/dto/LoginRequest.java
+  s_17a5063aa38dd4::t_ccfdbc5d44b0c9 1-9
+toys-user-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_f9ef5ac8a43043 1-40
+toys-moderation-service/pom.xml
+  s_17a5063aa38dd4::t_450b2dbcf9448f 1-97
+toys-gateway/src/main/java/com/toys/video/gateway/GatewayApplication.java
+  s_17a5063aa38dd4::t_100772d050cf15 1-14
+toys-user-service/src/main/java/com/toys/video/user/entity/User.java
+  s_17a5063aa38dd4::t_e285d51b24296b 1-27
+toys-common/src/main/java/com/toys/video/common/web/TraceIdFilter.java
+  s_17a5063aa38dd4::t_b5b2f199c35060 1-39
+toys-media-service/pom.xml
+  s_17a5063aa38dd4::t_3614012aa13503 1-93
+toys-api/src/main/java/com/toys/video/api/feign/UserInternalClient.java
+  s_17a5063aa38dd4::t_f9987daa0041e9 12-13
+  s_17a5063aa38dd4::t_ac0d06bb0b0965 1-11,14-21
+deploy/start-minio.sh
+  s_17a5063aa38dd4::t_3cb3ee18d72cf0 1-8
+toys-common/pom.xml
+  s_17a5063aa38dd4::t_d879a6cb8f3a12 1-64
+toys-api/pom.xml
+  s_17a5063aa38dd4::t_acbcb20e17769b 1-26
+toys-api/src/main/java/com/toys/video/api/event/VideoApprovedEvent.java
+  s_17a5063aa38dd4::t_0898ad0769106e 1-10
+scripts/probe_media.py
+  s_17a5063aa38dd4::t_3a6974848a8d40 1-47
+deploy/rocketmq/broker.conf
+  s_17a5063aa38dd4::t_d8b36c112c9d57 1-10
+toys-api/src/main/java/com/toys/video/api/feign/VideoInternalClient.java
+  s_17a5063aa38dd4::t_d655889019e8b7 1-12,15-33
+  s_17a5063aa38dd4::t_a5131943529e57 13-14
+toys-user-service/src/main/java/com/toys/video/user/dto/RegisterRequest.java
+  s_17a5063aa38dd4::t_3d20979456a3f0 1-14
+scripts/auto_screen.py
+  s_17a5063aa38dd4::t_2c5065ac9b9792 1-135
+toys-common/src/main/java/com/toys/video/common/api/R.java
+  s_17a5063aa38dd4::t_e4d526ae9389fc 1-24
+toys-video-service/pom.xml
+  s_17a5063aa38dd4::t_dd4b8c0e7879dc 1-93
+toys-api/src/main/java/com/toys/video/api/event/Topics.java
+  s_17a5063aa38dd4::t_d36d94f46db5fe 1-12
+toys-gateway/pom.xml
+  s_17a5063aa38dd4::t_77c2973bf4c190 1-46
+toys-moderation-service/src/main/java/com/toys/video/moderation/ModerationApplication.java
+  s_17a5063aa38dd4::t_9ebb52df186426 1-16
+toys-api/src/main/java/com/toys/video/api/feign/InternalFeignConfig.java
+  s_17a5063aa38dd4::t_5d017209be0201 1-19
+toys-gateway/src/main/java/com/toys/video/gateway/error/GlobalErrorWebExceptionHandler.java
+  s_17a5063aa38dd4::t_b133c7da31119b 1-13,15-74
+  s_17a5063aa38dd4::t_4d4755ca699ab1 14
+toys-media-service/src/main/java/com/toys/video/media/MediaApplication.java
+  s_17a5063aa38dd4::t_6097ce4a4ffdf9 1-16
+toys-api/src/main/java/com/toys/video/api/event/VideoUploadedEvent.java
+  s_17a5063aa38dd4::t_cfb2de8b15b442 1-12
+toys-common/src/main/java/com/toys/video/common/web/GlobalExceptionHandler.java
+  s_17a5063aa38dd4::t_6250fff881838a 1-50
+toys-common/src/main/java/com/toys/video/common/security/JwtUtil.java
+  s_17a5063aa38dd4::t_7dae9ed64e4343 1-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "92ad271762372ecf784cbb629680c8c7761c5637",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

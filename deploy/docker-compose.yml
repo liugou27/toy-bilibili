@@ -1,0 +1,62 @@
+services:
+  nacos:
+    image: nacos/nacos-server:v3.0.3
+    container_name: toys-nacos
+    environment:
+      - MODE=standalone
+      - NACOS_AUTH_ENABLED=false
+      - NACOS_AUTH_TOKEN=dG95cy12aWRlby1uYWNvcy1zZWNyZXQta2V5LTAxMjM0NTY3ODk=
+      - NACOS_AUTH_IDENTITY_KEY=serverIdentity
+      - NACOS_AUTH_IDENTITY_VALUE=toys-video
+      - JVM_XMS=256m
+      - JVM_XMX=512m
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+      - "18080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9848'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.3.2
+    container_name: toys-mq-namesrv
+    command: sh mqnamesrv
+    environment:
+      - JAVA_OPT_EXT=-Xms256m -Xmx256m
+    ports:
+      - "9876:9876"
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.3.2
+    container_name: toys-mq-broker
+    command: sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/broker.conf
+    environment:
+      - JAVA_OPT_EXT=-Xms512m -Xmx512m -Xmn128m
+    volumes:
+      - ./rocketmq/broker.conf:/home/rocketmq/broker.conf:ro
+    depends_on:
+      - rocketmq-namesrv
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+      - "10912:10912"
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: toys-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+# MinIO 以本机进程运行(Rosetta 转译 darwin-amd64 二进制,官方已停止 arm64 发布):
+#   minio server ~/toys-minio-data --console-address ":9001"
+#   环境变量 MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin
+# 启动脚本见 deploy/start-minio.sh
+
+volumes:
+  redis-data:

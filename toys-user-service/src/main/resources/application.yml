@@ -1,0 +1,40 @@
+server:
+  port: 8101
+
+spring:
+  application:
+    name: toys-user-service
+  config:
+    import:
+      - optional:nacos:common.yml
+      - optional:nacos:toys-user-service.yml
+  cloud:
+    nacos:
+      server-addr: 127.0.0.1:8848
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5433/toys_video?currentSchema=user_db
+    username: postgres
+    password: ""
+  flyway:
+    enabled: true
+    default-schema: user_db
+    schemas: user_db
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+toys:
+  jwt:
+    secret: ${toys.jwt.secret:toys-video-dev-secret-key-change-me-in-prod!}
+    ttl-seconds: 604800
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{traceId:-}] %logger{36} - %msg%n"

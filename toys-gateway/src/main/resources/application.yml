@@ -1,0 +1,62 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: toys-gateway
+  config:
+    import:
+      - optional:nacos:common.yml
+      - optional:nacos:toys-gateway.yml
+  cloud:
+    nacos:
+      server-addr: 127.0.0.1:8848
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 3000
+            response-timeout: 300s
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowed-origin-patterns: ${toys.cors.origins:http://localhost:5173}
+                allowed-methods: "*"
+                allowed-headers: "*"
+                exposed-headers: X-Request-Id
+                allow-credentials: true
+          routes:
+            - id: user-service
+              uri: lb://toys-user-service
+              predicates:
+                - Path=/api/auth/**,/api/users/**
+            - id: video-service
+              uri: lb://toys-video-service
+              predicates:
+                - Path=/api/videos/**,/api/my/videos/**
+            - id: moderation-service
+              uri: lb://toys-moderation-service
+              predicates:
+                - Path=/api/admin/**
+            - id: minio-media
+              uri: http://127.0.0.1:9000
+              predicates:
+                - Path=/media/**
+              filters:
+                - RewritePath=/media/(?<segment>.*), /$\{segment}
+
+toys:
+  jwt:
+    secret: ${toys.jwt.secret:toys-video-dev-secret-key-change-me-in-prod!}
+  cors:
+    origins: ${toys.cors.origins:http://localhost:5173}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{traceId:-}] %logger{36} - %msg%n"

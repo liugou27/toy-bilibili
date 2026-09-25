@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 本项目专用 Maven 配置:绕开全局 settings 里的内网 Nexus 镜像,走阿里云 HTTPS + 本机代理 -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+    <proxies>
+        <proxy>
+            <id>local-proxy</id>
+            <active>true</active>
+            <protocol>http</protocol>
+            <host>127.0.0.1</host>
+            <port>7897</port>
+        </proxy>
+    </proxies>
+    <mirrors>
+        <mirror>
+            <id>aliyun-https</id>
+            <name>aliyun public (https)</name>
+            <url>https://maven.aliyun.com/repository/public</url>
+            <mirrorOf>*</mirrorOf>
+        </mirror>
+    </mirrors>
+</settings>

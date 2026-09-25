@@ -1,0 +1,7 @@
+.idea/
+target/
+node_modules/
+dist/
+*.iml
+.DS_Store
+data/

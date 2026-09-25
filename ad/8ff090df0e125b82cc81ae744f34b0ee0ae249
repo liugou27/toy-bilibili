@@ -1,0 +1,71 @@
+toys-moderation-service/src/main/java/com/toys/video/moderation/ModerationApplication.java
+  s_17a5063aa38dd4::t_fd807571d0a368 7,9
+toys-moderation-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_52cedeef829776 24-28
+frontend/src/views/UploadView.vue
+  s_17a5063aa38dd4::t_88eaec958100b8 3-7,9-93,95-109,288-317,321-396
+toys-moderation-service/src/main/java/com/toys/video/moderation/entity/ModerationReport.java
+  s_17a5063aa38dd4::t_01aa64b3e17ba6 37-41
+frontend/src/views/WatchView.vue
+  s_17a5063aa38dd4::t_88eaec958100b8 3-10,13-25,71,92-120,125-143,145-198
+toys-video-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_52cedeef829776 24-28
+frontend/src/views/AdminReviewView.vue
+  s_17a5063aa38dd4::t_83a5b1839d7c8a 221
+  s_17a5063aa38dd4::t_e3ffc70b53c1bb 3-7,10-13,23,25-27,33,35,44,49-51,57,59-61,67-68,76-77,203-220,222-229
+frontend/src/main.js
+  s_17a5063aa38dd4::t_7278f6128b2554 5
+frontend/src/style.css
+  s_17a5063aa38dd4::t_baa53483a77e2e 1-78
+  s_17a5063aa38dd4::t_0cb58e730a53af 79-152
+toys-gateway/pom.xml
+  s_17a5063aa38dd4::t_2b2cab83b3e890 33-35
+  s_17a5063aa38dd4::t_b8704d1bd7ff42 32
+toys-moderation-service/src/main/java/com/toys/video/moderation/dto/ModerationQueueItem.java
+  s_17a5063aa38dd4::t_e32ccdc2b96ccb 12-13
+toys-user-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_52cedeef829776 21-25
+frontend/src/views/HomeView.vue
+  s_17a5063aa38dd4::t_88eaec958100b8 2-20,22,24-30,43,45,59,102-137,141-151,154-193,196-296
+scripts/bench.py
+  s_17a5063aa38dd4::t_cef1f76c25e379 1-16,19-81
+  s_17a5063aa38dd4::t_9d0b8775f2501d 17-18
+toys-moderation-service/src/main/java/com/toys/video/moderation/service/ModerationService.java
+  s_17a5063aa38dd4::t_2e0034e70cadd0 90,93-94,96-149,152-153,165-166,173-176,179,194-195,198
+  s_17a5063aa38dd4::t_234e32d05bf0ec 85-89,91-92,95
+toys-moderation-service/src/main/resources/db/migration/V2__review_claim.sql
+  s_17a5063aa38dd4::t_bc1344babb324c 1-4
+toys-moderation-service/src/main/java/com/toys/video/moderation/controller/AdminModerationController.java
+  s_17a5063aa38dd4::t_46e6b8eb51c981 63-64
+  s_17a5063aa38dd4::t_8bf8d9525d1c88 77-83
+toys-gateway/src/main/java/com/toys/video/gateway/ratelimit/RateLimitConfig.java
+  s_17a5063aa38dd4::t_6ff105338c6d35 26-29
+  s_17a5063aa38dd4::t_f279fa1cb3a0bf 1-25,30-32
+toys-media-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_52cedeef829776 22-26
+toys-gateway/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_e1d935c3c2b6e8 92-93
+  s_17a5063aa38dd4::t_52cedeef829776 14-17,46-51,56-61,66-71
+  s_17a5063aa38dd4::t_ec7ac5a2b12fa8 89
+toys-video-service/src/main/java/com/toys/video/video/service/VideoService.java
+  s_17a5063aa38dd4::t_ffba02eec28162 57-61,121,123-132,136-159
+  s_17a5063aa38dd4::t_43625f5eda5232 219
+frontend/src/App.vue
+  s_17a5063aa38dd4::t_26ef1b1926e7b9 3-24,26-30,32-40,46,59-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ad8ff090df0e125b82cc81ae744f34b0ee0ae249",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

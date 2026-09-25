@@ -1,0 +1,39 @@
+toys-media-service/src/main/java/com/toys/video/media/entity/TranscodeJob.java
+  s_17a5063aa38dd4::t_e4fd9ef73269a7 1-39
+toys-media-service/src/main/java/com/toys/video/media/handler/JsonbTypeHandler.java
+  s_17a5063aa38dd4::t_c0c61e0391bbf6 1-38
+toys-media-service/src/main/java/com/toys/video/media/service/MediaStorageService.java
+  s_17a5063aa38dd4::t_88a38c44af888b 1-71
+toys-media-service/src/main/java/com/toys/video/media/mq/VideoApprovedConsumer.java
+  s_17a5063aa38dd4::t_2c9d63666b6b04 1-54
+toys-video-service/src/main/java/com/toys/video/video/service/VideoService.java
+  s_17a5063aa38dd4::t_316a8132ca692d 155-159
+toys-media-service/src/main/java/com/toys/video/media/config/MinioConfig.java
+  s_17a5063aa38dd4::t_f38b921173f230 1-55
+toys-media-service/src/main/java/com/toys/video/media/mapper/TranscodeJobMapper.java
+  s_17a5063aa38dd4::t_844ea71bfbb10b 1-9
+toys-media-service/src/main/java/com/toys/video/media/service/TranscodeService.java
+  s_17a5063aa38dd4::t_a64ac04167e449 105-106
+  s_17a5063aa38dd4::t_077f6a4766a881 72,92
+  s_17a5063aa38dd4::t_fb8bfb1f4d3dd8 1-71,73-91,93-104,107-161
+toys-media-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_a573b8135f3a16 1-50
+toys-media-service/src/main/resources/db/migration/V1__init_media.sql
+  s_17a5063aa38dd4::t_152826a2f10237 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "151dbe543e3ec8919adaa8ea4b27b908fefec28a",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

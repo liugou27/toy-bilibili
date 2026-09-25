@@ -122,10 +122,13 @@ toys/
       → AUTO_PASS/AUTO_SUSPECT:写 moderation_reports(auto_report JSONB),
         Feign 回写 UNDER_REVIEW(AUTO_SUSPECT 在报告中标红提示)
 
-人工   管理员登录审核后台:队列 → 详情(原片 presigned URL 15 分钟 + 机审报告)
+人工   管理员登录审核后台:队列 → 认领(POST claim,软锁 10 分钟自动释放)
+      → 详情(原片 presigned URL 15 分钟 + 机审报告)
       → 通过:moderation-service Feign 调 video-service 内部接口置 APPROVED
         → video-service 发事件 VIDEO_APPROVED
       → 拒绝:写 decision=REJECTED + 原因,Feign 回写 REJECTED
+      → 并发语义:决策是硬锁(条件更新),两个审核员处理同一单只有先到者生效,
+        后到者收到「该任务已被其他审核员处理/认领」
 
 转码   media-service 消费(幂等:检查 status 仍为 APPROVED)
       → Feign 置 TRANSCODING → 建 transcode_jobs(RUNNING)→ 拉原片

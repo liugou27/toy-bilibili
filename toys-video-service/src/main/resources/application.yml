@@ -1,5 +1,6 @@
 server:
   port: 8102
+  shutdown: graceful
 
 spring:
   application:
@@ -8,9 +9,14 @@ spring:
     import:
       - optional:nacos:common.yml
       - optional:nacos:toys-video-service.yml
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   cloud:
     nacos:
       server-addr: 127.0.0.1:8848
+    openfeign:
+      circuitbreaker:
+        enabled: true
   datasource:
     url: jdbc:postgresql://127.0.0.1:5433/toys_video?currentSchema=video_db
     username: postgres

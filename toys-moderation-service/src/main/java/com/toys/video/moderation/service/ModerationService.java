@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -82,6 +83,7 @@ public class ModerationService {
     }
 
     public void approve(Long videoId, Long reviewerId) {
+        assertVideoPending(videoId);
         transitionDecision(videoId, reviewerId, "APPROVED", null);
         applyStatus(videoId, new VideoInternalClient.InternalStatusUpdate(
                 VideoStatus.APPROVED.name(), null, null, null, null));
@@ -92,10 +94,22 @@ public class ModerationService {
         if (reason == null || reason.isBlank()) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "拒绝原因必填");
         }
+        assertVideoPending(videoId);
         transitionDecision(videoId, reviewerId, "REJECTED", reason.trim());
         applyStatus(videoId, new VideoInternalClient.InternalStatusUpdate(
                 VideoStatus.REJECTED.name(), null, null, null, reason.trim()));
         log.info("video {} rejected by {}: {}", videoId, reviewerId, reason.trim());
+    }
+
+    /** 审核动作前置校验:视频状态已被他人推进时直接拒绝,避免报告已改而状态回写失败的不一致。 */
+    private void assertVideoPending(Long videoId) {
+        var resp = videoInternalClient.batch(List.of(videoId));
+        if (resp == null || resp.code() != 0 || resp.data() == null || resp.data().isEmpty()) {
+            throw BizException.of(ErrorCode.NOT_FOUND, "视频不存在");
+        }
+        if (!VideoStatus.UNDER_REVIEW.name().equals(resp.data().get(0).status())) {
+            throw BizException.of(ErrorCode.MODERATION_NOT_PENDING);
+        }
     }
 
     private void transitionDecision(Long videoId, Long reviewerId, String decision, String reason) {

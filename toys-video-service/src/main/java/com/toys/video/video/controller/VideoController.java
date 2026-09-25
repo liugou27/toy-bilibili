@@ -5,6 +5,7 @@ import com.toys.video.common.api.R;
 import com.toys.video.common.context.UserContext;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
+import com.toys.video.video.dto.InitUploadResponse;
 import com.toys.video.video.dto.UploadResponse;
 import com.toys.video.video.dto.VideoCard;
 import com.toys.video.video.dto.VideoDetail;
@@ -14,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,13 +29,49 @@ public class VideoController {
     private final VideoService videoService;
     private final PlayCountService playCountService;
 
-    /** 上传(multipart):file + title + description。 */
+    /** 上传(multipart):file + title + description。小文件一步上传。 */
     @PostMapping
     public R<UploadResponse> upload(@RequestParam("file") MultipartFile file,
                                     @RequestParam("title") String title,
                                     @RequestParam(value = "description", required = false) String description) {
         Long userId = requireUser();
         return R.ok(videoService.upload(file, title, description, userId));
+    }
+
+    // ==================== 分片上传(大文件/断点续传/秒传) ====================
+
+    /** 初始化:返回 uploadId 与已完成分片;秒传时 instant=true,videoId 直接可用。 */
+    @PostMapping("/upload/init")
+    public R<InitUploadResponse> initUpload(@jakarta.validation.Valid @RequestBody InitUploadRequest req) {
+        Long userId = requireUser();
+        return R.ok(videoService.initUpload(req.fileName(), req.fileSize(), req.md5(), userId));
+    }
+
+    /** 获取第 partNumber 片直传 MinIO 的预签名地址。 */
+    @GetMapping("/upload/{videoId}/presign/{partNumber}")
+    public R<String> presignPart(@PathVariable Long videoId, @PathVariable int partNumber) {
+        Long userId = requireUser();
+        return R.ok(videoService.presignPart(videoId, partNumber, userId));
+    }
+
+    /** 全部分片上传完成后合并并提交审核。 */
+    @PostMapping("/upload/{videoId}/complete")
+    public R<Void> completeUpload(@PathVariable Long videoId,
+                                  @RequestBody CompleteUploadRequest req) {
+        Long userId = requireUser();
+        videoService.completeUpload(videoId, req.title(), req.description(), userId);
+        return R.ok();
+    }
+
+    public record InitUploadRequest(
+            @jakarta.validation.constraints.NotBlank(message = "文件名不能为空") String fileName,
+            @jakarta.validation.constraints.NotNull(message = "文件大小不能为空") Long fileSize,
+            String md5) {
+    }
+
+    public record CompleteUploadRequest(
+            @jakarta.validation.constraints.NotBlank(message = "标题不能为空") String title,
+            String description) {
     }
 
     @GetMapping

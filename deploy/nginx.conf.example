@@ -1,0 +1,44 @@
+# toys-video 单源部署示例(服务器上消除跨域)
+# 浏览器只访问本机 80 端口:静态资源、API、HLS 全部同源。
+# MinIO(9000)与各服务端口不对外网开放。
+#
+#   server(前端静态)  →  /            前端 dist
+#   gateway :8080      →  /api/**     统一鉴权路由
+#   gateway :8080      →  /media/**   HLS/封面(网关再代理 MinIO)
+#
+server {
+    listen 80;
+    server_name _;
+
+    # 前端静态资源(Vue 构建产物,frontend/dist)
+    root /opt/toys-video/frontend/dist;
+    index index.html;
+
+    # 单页应用路由回退
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # API:透传到网关;上传相关接口放宽超时
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_request_buffering off;      # 大请求体(小文件直传)流式转发
+        proxy_read_timeout 300s;
+    }
+
+    # HLS 分片与封面:经网关代理 MinIO;必须支持 Range(进度条拖动)
+    location /media/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Range $http_range;
+        proxy_set_header If-Range $http_if_range;
+        proxy_buffering off;
+        proxy_read_timeout 120s;
+    }
+}

@@ -5,6 +5,7 @@ import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.common.util.PythonScriptRunner;
 import com.toys.video.moderation.config.MinioConfig;
+import com.toys.video.moderation.support.MinioRetryExecutor;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import lombok.extern.slf4j.Slf4j;
@@ -22,13 +23,16 @@ import java.nio.file.StandardCopyOption;
 public class AutoScreenService {
 
     private final MinioClient minioClient;
+    private final MinioRetryExecutor retryExecutor;
     private final PythonScriptRunner scriptRunner;
     private final Path autoScreenScript;
 
     public AutoScreenService(MinioClient minioClient,
+                             MinioRetryExecutor retryExecutor,
                              PythonScriptRunner scriptRunner,
                              @Value("${toys.scripts.dir}") String scriptsDir) {
         this.minioClient = minioClient;
+        this.retryExecutor = retryExecutor;
         this.scriptRunner = scriptRunner;
         this.autoScreenScript = Path.of(scriptsDir, "auto_screen.py");
     }
@@ -38,14 +42,7 @@ public class AutoScreenService {
         try {
             workDir = Files.createTempDirectory("autoscreen-");
             Path original = workDir.resolve("original.bin");
-            try (var in = minioClient.getObject(GetObjectArgs.builder()
-                    .bucket(MinioConfig.BUCKET_VIDEOS)
-                    .object(objectKey)
-                    .build())) {
-                Files.copy(in, original, StandardCopyOption.REPLACE_EXISTING);
-            } catch (Exception e) {
-                throw new IOException("minio get failed", e);
-            }
+            downloadOriginal(objectKey, original);
             log.info("downloaded original {} ({} bytes)", objectKey, Files.size(original));
             return scriptRunner.run(autoScreenScript,
                     original.toString(), "--frames", "8", "--workdir", workDir.toString());
@@ -55,6 +52,21 @@ public class AutoScreenService {
         } finally {
             cleanup(workDir);
         }
+    }
+
+    /** 下载原片:经重试执行器,网络抖动自动退避重试。 */
+    private void downloadOriginal(String objectKey, Path target) {
+        retryExecutor.execute(() -> {
+            try (var in = minioClient.getObject(GetObjectArgs.builder()
+                    .bucket(MinioConfig.BUCKET_VIDEOS)
+                    .object(objectKey)
+                    .build())) {
+                Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+                return null;
+            } catch (Exception e) {
+                throw MinioRetryExecutor.unchecked(e);
+            }
+        }, "机审下载原片");
     }
 
     private void cleanup(Path dir) {

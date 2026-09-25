@@ -103,9 +103,17 @@ toys/
 ## 7. 核心链路(事件驱动)
 
 ```
-上传   前端 → 网关 → video-service:校验(类型白名单 mp4/mkv/mov/avi/flv,≤2GB)
-      → 流式写 MinIO videos/{videoId}/original.mp4 → 建 videos 记录并置
-        UPLOADED → 置 AUTO_SCREENING → 发事件 VIDEO_UPLOADED {videoId, objectKey}
+上传   分片直传(大文件/断点续传/秒传):
+      前端 Web Worker 计算文件 md5 → POST /api/videos/upload/init
+        → 秒传:md5 命中已完成记录 → 直接建视频记录并发机审事件,零上传
+        → 续传:同用户同 md5 有未完成会话 → 返回已完成分片号,前端只补缺
+        → 新会话:服务端按 5MiB~10000 片规则计算 partSize
+      前端按分片 GET presign → 浏览器 PUT 直传 MinIO(chunks/{uploadId}/{n} 独立对象,
+        网关不经手文件字节)→ 全部到齐 POST complete
+        → 服务端校验分片数量 → composeObject 合并为 videos/{id}/original.{ext}
+        → 清理分片对象 → 置 AUTO_SCREENING → 发事件 VIDEO_UPLOADED
+      小文件仍保留一步 multipart 上传(POST /api/videos)。
+      7 天未完成的孤儿会话在下次 init 时自动清理(abort+删分片)。
 
 机审   moderation-service 消费(幂等:检查 status 仍为 AUTO_SCREENING)
       → 拉原片到临时目录 → Python auto_screen.py
@@ -246,14 +254,14 @@ Java 侧用 ProcessBuilder 调用,捕获 stderr 用于错误诊断;脚本非零�
 - **单源原则**:前端、API、HLS 分片全部同域名,由 Nginx 统一入口,浏览器视角无跨域。
 - MinIO 的 9000/9001 端口**不对公网开放**,浏览器从不直连 MinIO;HLS 通过网关代理访问。
 - 网关保留全局 CORS 配置(origin 白名单走 Nacos 配置,默认关闭),以备前端与 API 分域部署(如静态资源上 CDN)的场景。
-- 若未来启用「预签名直传 MinIO」,需同步给 `videos` bucket 配置 S3 CORS 规则(允许 PUT + 指定 origin),并在文档标注;MVP 直传未启用,故不需要。
+- **直传已启用**:分片上传走预签名 PUT 直传 MinIO(网关不经手文件字节),`videos` bucket 需允许跨域 PUT(MinIO 默认 CORS 全放行);HLS 读取仍走网关 `/media/**` 代理,浏览器与 MinIO 的原片/分片交互均带预签名,不暴露写权限。
 - HLS 场景注意:Nginx 代理 `/media/**` 需透传 Range 头(m3u8 分片可拖动进度条),`proxy_buffering off`。
 
 ## 17. 交互性与健壮性要求
 
 前端交互:
 
-- 上传页:实时进度条、文件类型/大小前端预校验、重复提交防护、上传失败可重试;提交后跳转「我的投稿」并看到状态实时推进(轮询 5s,直到终态停止)。
+- 上传页:三阶段进度(指纹计算 → 分片直传 → 合并提交);文件指纹(md5)驱动秒传与断点续传,暂停/失败后重新选择同一文件即从断点续传;分片 3 并发、单片失败重试 3 次(指数退避);前端预校验类型与 2GB 上限;提交后跳「我的投稿」并看到状态实时推进(轮询 5s,直到终态停止)。
 - 播放页:hls.js 加载失败显示错误态 + 重试按钮;清晰的空状态(视频不存在/未发布/审核中不可看)。
 - 我的投稿:每条视频显示状态机当前节点与失败原因(拒绝原因/转码错误);自动刷新。
 - 审核后台:队列自动刷新;机审报告结构化展示(checks 列表,不裸 JSON);拒绝必填原因;防重复操作(按钮 loading 态)。

@@ -10,7 +10,8 @@ import java.util.List;
 
 /** user-service 内部接口:其他服务取用户展示信息(UP主名等)。 */
 @FeignClient(name = "toys-user-service", contextId = "userInternalClient", path = "/internal/users",
-        configuration = InternalFeignConfig.class)
+        configuration = InternalFeignConfig.class,
+        fallbackFactory = UserInternalClientFallbackFactory.class)
 public interface UserInternalClient {
 
     @GetMapping("/batch")

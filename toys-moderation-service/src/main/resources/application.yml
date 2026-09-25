@@ -1,5 +1,6 @@
 server:
   port: 8103
+  shutdown: graceful
 
 spring:
   application:
@@ -11,6 +12,11 @@ spring:
   cloud:
     nacos:
       server-addr: 127.0.0.1:8848
+    openfeign:
+      circuitbreaker:
+        enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   datasource:
     url: jdbc:postgresql://127.0.0.1:5433/toys_video?currentSchema=moderation_db
     username: postgres

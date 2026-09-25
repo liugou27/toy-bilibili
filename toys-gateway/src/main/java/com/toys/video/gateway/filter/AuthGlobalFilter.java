@@ -26,6 +26,7 @@ import java.util.List;
 
 /**
  * 全局鉴权过滤器:
+ * - Authorization 头含换行/控制字符或 token 部分含空格时一律 401(防 header 注入);
  * - /internal/** 一律 403(内部接口只允许服务间直连,不经过网关);
  * - 白名单(/api/auth/**、GET /api/videos/**、/media/**、/actuator/**)放行;
  * - /api/admin/** 额外要求 ADMIN 角色;
@@ -59,6 +60,11 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getURI().getPath();
+        String auth = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+
+        if (hasIllegalAuthChars(auth)) {
+            return reject(exchange, HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED);
+        }
 
         if (path.startsWith("/internal")) {
             return reject(exchange, HttpStatus.FORBIDDEN, ErrorCode.FORBIDDEN);
@@ -73,13 +79,13 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        String auth = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-        if (auth == null || !auth.startsWith("Bearer ")) {
+        String token = auth == null ? null : (auth.startsWith("Bearer ") ? auth.substring(7) : auth);
+        if (token == null) {
             return reject(exchange, HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED);
         }
         JwtUtil.TokenPayload payload;
         try {
-            payload = jwtUtil.parse(auth.substring(7));
+            payload = jwtUtil.parse(token);
         } catch (JwtException e) {
             return reject(exchange, HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED);
         }
@@ -103,6 +109,24 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             return true;
         }
         return "POST".equals(method) && PUBLIC_POST.stream().anyMatch(p -> MATCHER.match(p, path));
+    }
+
+    /**
+     * Authorization 头只接受 "Bearer <token>" 形式:出现换行、制表符或其他控制字符,
+     * 或 token 部分含空格时判定为非法,直接 401(防 header 注入与日志污染)。
+     */
+    private boolean hasIllegalAuthChars(String auth) {
+        if (auth == null) {
+            return false;
+        }
+        for (int i = 0; i < auth.length(); i++) {
+            char c = auth.charAt(i);
+            if (c < 0x20) {
+                return true;
+            }
+        }
+        String token = auth.startsWith("Bearer ") ? auth.substring("Bearer ".length()) : auth;
+        return token.indexOf(' ') >= 0;
     }
 
     /** 若携带合法 Bearer token,则返回附带身份头的请求;否则返回原请求。 */

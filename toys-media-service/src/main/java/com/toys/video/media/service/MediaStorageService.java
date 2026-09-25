@@ -1,6 +1,7 @@
 package com.toys.video.media.service;
 
 import com.toys.video.media.config.MinioConfig;
+import com.toys.video.media.support.MinioRetryExecutor;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -14,24 +15,27 @@ import java.nio.file.Path;
 import java.util.Locale;
 import java.util.stream.Stream;
 
-/** MinIO 存取:原片下载与 HLS 产物上传。 */
+/** MinIO 存取:原片下载与 HLS 产物上传,单文件操作经重试执行器抗网络抖动。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class MediaStorageService {
 
     private final MinioClient minioClient;
+    private final MinioRetryExecutor retryExecutor;
 
     public void downloadOriginal(String objectKey, Path target) {
-        try (var in = minioClient.getObject(GetObjectArgs.builder()
-                .bucket(MinioConfig.BUCKET_VIDEOS)
-                .object(objectKey)
-                .build())) {
-            Files.copy(in, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        } catch (Exception e) {
-            throw new com.toys.video.common.exception.BizException(
-                    com.toys.video.common.exception.ErrorCode.INTERNAL_ERROR, "下载原片失败");
-        }
+        retryExecutor.execute(() -> {
+            try (var in = minioClient.getObject(GetObjectArgs.builder()
+                    .bucket(MinioConfig.BUCKET_VIDEOS)
+                    .object(objectKey)
+                    .build())) {
+                Files.copy(in, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                return null;
+            } catch (Exception e) {
+                throw MinioRetryExecutor.unchecked(e);
+            }
+        }, "下载原片");
         log.info("downloaded original {} -> {}", objectKey, target);
     }
 
@@ -40,16 +44,20 @@ public class MediaStorageService {
             files.filter(Files::isRegularFile).forEach(file -> {
                 String name = outDir.relativize(file).toString().replace('\\', '/');
                 String contentType = contentTypeOf(name);
-                try (var in = Files.newInputStream(file)) {
-                    minioClient.putObject(PutObjectArgs.builder()
-                            .bucket(MinioConfig.BUCKET_HLS)
-                            .object(videoId + "/" + name)
-                            .stream(in, Files.size(file), -1)
-                            .contentType(contentType)
-                            .build());
-                } catch (Exception e) {
-                    throw new RuntimeException("upload " + name + " failed: " + e.getMessage(), e);
-                }
+                // 单文件粒度重试:每次尝试重新打开文件流,已成功的分片不受影响
+                retryExecutor.execute(() -> {
+                    try (var in = Files.newInputStream(file)) {
+                        minioClient.putObject(PutObjectArgs.builder()
+                                .bucket(MinioConfig.BUCKET_HLS)
+                                .object(videoId + "/" + name)
+                                .stream(in, Files.size(file), -1)
+                                .contentType(contentType)
+                                .build());
+                        return null;
+                    } catch (Exception e) {
+                        throw MinioRetryExecutor.unchecked(e);
+                    }
+                }, "上传 " + name);
             });
         }
         log.info("uploaded hls artifacts for video {}", videoId);

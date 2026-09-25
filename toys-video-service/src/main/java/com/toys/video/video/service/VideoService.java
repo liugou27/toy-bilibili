@@ -25,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import java.time.LocalDateTime;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
@@ -32,7 +33,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -45,12 +45,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class VideoService {
 
-    private static final Map<VideoStatus, Set<VideoStatus>> ALLOWED_TRANSITIONS = Map.of(
-            VideoStatus.AUTO_SCREENING, Set.of(VideoStatus.UNDER_REVIEW, VideoStatus.REJECTED),
-            VideoStatus.UNDER_REVIEW, Set.of(VideoStatus.APPROVED, VideoStatus.REJECTED),
-            VideoStatus.APPROVED, Set.of(VideoStatus.TRANSCODING),
-            VideoStatus.TRANSCODING, Set.of(VideoStatus.PUBLISHED, VideoStatus.TRANSCODE_FAILED)
-    );
+    /** 分片上传文件大小上限:2GB(与网关 multipart 限制一致)。 */
+    private static final long MAX_FILE_SIZE = 2L * 1024 * 1024 * 1024;
 
     private final VideoMapper videoMapper;
     private final VideoEventPublisher eventPublisher;
@@ -152,16 +148,12 @@ public class VideoService {
             throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
         }
         VideoStatus current = VideoStatus.valueOf(video.getStatus());
+        // 同状态重入:幂等无操作(消息重投递场景)
         if (current == target) {
-            // 同状态重入:幂等无操作(消息重投递场景)
             log.info("video {} already {}, idempotent skip", id, current);
             return;
         }
-        Set<VideoStatus> allowed = ALLOWED_TRANSITIONS.get(current);
-        if (allowed == null || !allowed.contains(target)) {
-            throw new BizException(ErrorCode.VIDEO_STATUS_CONFLICT,
-                    "非法状态流转: %s -> %s".formatted(current, target));
-        }
+        VideoStateMachine.requireTransit(current, target);
         LambdaUpdateWrapper<Video> uw = new LambdaUpdateWrapper<Video>()
                 .eq(Video::getId, id)
                 .eq(Video::getStatus, current.name())
@@ -240,6 +232,262 @@ public class VideoService {
             throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
         }
         return video;
+    }
+
+    // ==================== 分片上传(断点续传/秒传) ====================
+    //
+    // 实现:每个分片是独立对象(chunks/{uploadId}/{partNumber}),浏览器凭预签名 PUT 直传 MinIO;
+    // 全部到齐后 composeObject 服务端合并为 videos/{id}/original.{ext},再清理分片对象。
+    // (MinIO Java SDK 未暴露 S3 multipart 高级 API,composeObject 是官方支持的合并方式。)
+
+    private static final String CHUNK_PREFIX = "chunks/";
+    private static final long STALE_UPLOAD_MS = 7L * 24 * 3600 * 1000;
+
+
+    /** 初始化/恢复/秒传。md5 命中已完成视频 → 秒传;同用户同 md5 未完成会话 → 续传;否则新建会话。 */
+    public com.toys.video.video.dto.InitUploadResponse initUpload(String fileName, long fileSize, String md5,
+                                                                  Long ownerId) {
+        if (fileSize <= 0) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "文件大小不合法");
+        }
+        if (fileSize > MAX_FILE_SIZE) {
+            throw BizException.of(ErrorCode.VIDEO_TOO_LARGE);
+        }
+        String safeName = sanitizeFileName(fileName);
+        String ext = extOf(safeName);
+        if (!allowedExtsAllowed(ext)) {
+            throw BizException.of(ErrorCode.VIDEO_TYPE_FORBIDDEN);
+        }
+        String digest = normalizeMd5(md5);
+
+        cleanupStaleUploads();
+
+        // 1. 秒传:同内容已有完成记录,直接复用对象
+        if (digest != null) {
+            Video done = videoMapper.selectOne(new LambdaQueryWrapper<Video>()
+                    .eq(Video::getMd5, digest)
+                    .ne(Video::getStatus, VideoStatus.UPLOADED.name())
+                    .isNotNull(Video::getObjectKey)
+                    .last("limit 1"));
+            if (done != null) {
+                Video v = new Video();
+                v.setOwnerId(ownerId);
+                v.setTitle(safeName.substring(0, safeName.lastIndexOf('.')));
+                v.setDescription("");
+                v.setStatus(VideoStatus.AUTO_SCREENING.name());
+                v.setObjectKey(done.getObjectKey());
+                v.setOriginalFilename(safeName);
+                v.setSizeBytes(done.getSizeBytes() != null ? done.getSizeBytes() : fileSize);
+                v.setMd5(digest);
+                videoMapper.insert(v);
+                eventPublisher.publishUploaded(new VideoUploadedEvent(
+                        v.getId(), v.getObjectKey(), ownerId, safeName));
+                log.info("instant upload: video {} reuses object of {}", v.getId(), done.getId());
+                return new com.toys.video.video.dto.InitUploadResponse(v.getId(), null, null, List.of(), true);
+            }
+        }
+
+        // 2. 断点续传:同用户同 md5 的未完成会话
+        if (digest != null) {
+            Video existing = videoMapper.selectOne(new LambdaQueryWrapper<Video>()
+                    .eq(Video::getMd5, digest)
+                    .eq(Video::getOwnerId, ownerId)
+                    .eq(Video::getStatus, VideoStatus.UPLOADED.name())
+                    .isNotNull(Video::getUploadId)
+                    .orderByDesc(Video::getCreatedAt)
+                    .last("limit 1"));
+            if (existing != null) {
+                long partSize = existing.getPartSize() != null ? existing.getPartSize() : UploadPolicy.MIN_PART_SIZE;
+                List<Integer> doneParts = listUploadedPartNumbers(existing);
+                log.info("resume upload: video {} parts done={}", existing.getId(), doneParts.size());
+                return new com.toys.video.video.dto.InitUploadResponse(
+                        existing.getId(), existing.getUploadId(), partSize, doneParts, false);
+            }
+        }
+
+        // 3. 新建分片会话
+        Video video = new Video();
+        video.setOwnerId(ownerId);
+        video.setTitle("(上传中) " + safeName);
+        video.setDescription("");
+        video.setStatus(VideoStatus.UPLOADED.name());
+        video.setMd5(digest);
+        video.setSizeBytes(fileSize);
+        video.setPartSize(UploadPolicy.computePartSize(fileSize));
+        videoMapper.insert(video);
+        video.setObjectKey(video.getId() + "/original." + ext);
+        video.setUploadId(java.util.UUID.randomUUID().toString().replace("-", ""));
+        videoMapper.updateById(video);
+        return new com.toys.video.video.dto.InitUploadResponse(
+                video.getId(), video.getUploadId(), video.getPartSize(), List.of(), false);
+    }
+
+    /** 签发分片直传 MinIO 的预签名 PUT 地址(网关不经手文件字节)。 */
+    public String presignPart(Long videoId, int partNumber, Long ownerId) {
+        Video video = requireOwnedUpload(videoId, ownerId);
+        if (partNumber < 1 || partNumber > UploadPolicy.MAX_PARTS) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "分片序号不合法");
+        }
+        try {
+            return minioClient.getPresignedObjectUrl(io.minio.GetPresignedObjectUrlArgs.builder()
+                    .method(io.minio.http.Method.PUT)
+                    .bucket(MinioConfig.BUCKET_VIDEOS)
+                    .object(chunkObject(video.getUploadId(), partNumber))
+                    .expiry(3600)
+                    .build());
+        } catch (Exception e) {
+            log.error("presign part failed, video={}, part={}", videoId, partNumber, e);
+            throw new BizException(ErrorCode.INTERNAL_ERROR, "签发分片地址失败");
+        }
+    }
+
+    /** 全部分片上传完成后合并并提交审核。 */
+    public void completeUpload(Long videoId, String title, String description, Long ownerId) {
+        Video video = requireOwnedUpload(videoId, ownerId);
+        // 并发兜底:原子确认仍持有上传会话,防止两个并发 complete 同时走到合并
+        int claimed = videoMapper.update(null, new LambdaUpdateWrapper<Video>()
+                .eq(Video::getId, videoId)
+                .eq(Video::getStatus, VideoStatus.UPLOADED.name())
+                .isNotNull(Video::getUploadId)
+                .set(Video::getStatus, VideoStatus.UPLOADED.name())
+                .set(Video::getUpdatedAt, LocalDateTime.now()));
+        if (claimed == 0) {
+            throw BizException.of(ErrorCode.VIDEO_STATUS_CONFLICT, "上传会话不存在或已完成");
+        }
+        if (title == null || title.isBlank() || title.length() > 100) {
+            throw BizException.of(ErrorCode.VIDEO_TITLE_INVALID);
+        }
+        if (description != null && description.length() > 2000) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "简介过长");
+        }
+        long partSize = video.getPartSize() != null ? video.getPartSize() : UploadPolicy.MIN_PART_SIZE;
+        long size = video.getSizeBytes() != null ? video.getSizeBytes() : 0;
+        int expected = size > 0 ? (int) Math.ceil((double) size / partSize) : 1;
+
+        List<Integer> uploaded = listUploadedPartNumbers(video);
+        if (uploaded.size() != expected) {
+            throw new BizException(ErrorCode.PARAM_INVALID,
+                    "分片不完整: 已收 %d/%d".formatted(uploaded.size(), expected));
+        }
+
+        // 服务端合并:composeObject 按 5MiB 对齐的分片顺序拼接
+        List<io.minio.ComposeSource> sources = uploaded.stream()
+                .map(p -> io.minio.ComposeSource.builder()
+                        .bucket(MinioConfig.BUCKET_VIDEOS)
+                        .object(chunkObject(video.getUploadId(), p))
+                        .build())
+                .toList();
+        try {
+            minioClient.composeObject(io.minio.ComposeObjectArgs.builder()
+                    .bucket(MinioConfig.BUCKET_VIDEOS)
+                    .object(video.getObjectKey())
+                    .sources(sources)
+                    .build());
+        } catch (Exception e) {
+            log.error("compose chunks failed, video={}", videoId, e);
+            throw new BizException(ErrorCode.INTERNAL_ERROR, "分片合并失败");
+        }
+
+        deleteChunks(video.getUploadId(), uploaded);
+
+        video.setTitle(title.trim());
+        video.setDescription(description == null ? "" : description.trim());
+        video.setStatus(VideoStatus.AUTO_SCREENING.name());
+        video.setUploadId(null);
+        videoMapper.updateById(video);
+        eventPublisher.publishUploaded(new VideoUploadedEvent(
+                video.getId(), video.getObjectKey(), video.getOwnerId(), video.getOriginalFilename()));
+        log.info("video {} chunks merged ({} parts), submitted for moderation", videoId, uploaded.size());
+    }
+
+    private Video requireOwnedUpload(Long videoId, Long ownerId) {
+        Video video = videoMapper.selectById(videoId);
+        if (video == null) {
+            throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
+        }
+        if (!video.getOwnerId().equals(ownerId)) {
+            throw BizException.of(ErrorCode.FORBIDDEN);
+        }
+        if (!VideoStatus.UPLOADED.name().equals(video.getStatus()) || video.getUploadId() == null) {
+            throw BizException.of(ErrorCode.VIDEO_STATUS_CONFLICT, "上传会话不存在或已完成");
+        }
+        return video;
+    }
+
+    private String chunkObject(String uploadId, int partNumber) {
+        return CHUNK_PREFIX + uploadId + "/" + partNumber;
+    }
+
+    /** 已上传分片号:列出 chunks/{uploadId}/ 前缀下的对象名。 */
+    private List<Integer> listUploadedPartNumbers(Video video) {
+        try {
+            List<Integer> parts = new java.util.ArrayList<>();
+            for (io.minio.Result<io.minio.messages.Item> r : minioClient.listObjects(
+                    io.minio.ListObjectsArgs.builder()
+                            .bucket(MinioConfig.BUCKET_VIDEOS)
+                            .prefix(CHUNK_PREFIX + video.getUploadId() + "/")
+                            .recursive(true)
+                            .build())) {
+                String name = r.get().objectName();
+                parts.add(Integer.parseInt(name.substring(name.lastIndexOf('/') + 1)));
+            }
+            java.util.Collections.sort(parts);
+            return parts;
+        } catch (Exception e) {
+            log.warn("list chunks failed, treat as empty: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private void deleteChunks(String uploadId, List<Integer> parts) {
+        try {
+            List<io.minio.messages.DeleteObject> objects = parts.stream()
+                    .map(p -> new io.minio.messages.DeleteObject(chunkObject(uploadId, p)))
+                    .toList();
+            for (io.minio.Result<io.minio.messages.DeleteError> errResult : minioClient.removeObjects(
+                    io.minio.RemoveObjectsArgs.builder()
+                            .bucket(MinioConfig.BUCKET_VIDEOS)
+                            .objects(objects)
+                            .build())) {
+                log.warn("chunk delete failed: {}", errResult.get().objectName());
+            }
+        } catch (Exception e) {
+            log.warn("chunk cleanup failed: {}", e.getMessage());
+        }
+    }
+
+    /** 清洗文件名:剥离路径分隔符与 "..",防路径穿越(文件名会进日志与 originalFilename 字段)。 */
+    private String sanitizeFileName(String fileName) {
+        if (fileName == null) {
+            return "";
+        }
+        return fileName.replace("/", "").replace("\\", "").replace("..", "");
+    }
+
+    /** md5 归一:空视为 null;非空必须为 32 位十六进制。 */
+    private String normalizeMd5(String md5) {
+        if (md5 == null || md5.isBlank()) {
+            return null;
+        }
+        String trimmed = md5.trim();
+        if (!trimmed.matches("^[a-fA-F0-9]{32}$")) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "md5 格式不合法");
+        }
+        return trimmed.toLowerCase(Locale.ROOT);
+    }
+
+    /** 清理 7 天未完成的孤儿会话,避免半截分片永久占用存储。 */
+    private void cleanupStaleUploads() {
+        List<Video> stale = videoMapper.selectList(new LambdaQueryWrapper<Video>()
+                .eq(Video::getStatus, VideoStatus.UPLOADED.name())
+                .isNotNull(Video::getUploadId)
+                .lt(Video::getCreatedAt, LocalDateTime.now().minusSeconds(STALE_UPLOAD_MS / 1000))
+                .last("limit 20"));
+        for (Video video : stale) {
+            deleteChunks(video.getUploadId(), listUploadedPartNumbers(video));
+            videoMapper.deleteById(video.getId());
+            log.info("cleaned stale upload session, video={}", video.getId());
+        }
     }
 
     private void revertToUploaded(Long id) {

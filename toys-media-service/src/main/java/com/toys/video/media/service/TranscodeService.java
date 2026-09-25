@@ -31,6 +31,7 @@ public class TranscodeService {
     private final MediaStorageService storageService;
     private final PythonScriptRunner scriptRunner;
     private final VideoInternalClient videoInternalClient;
+    private final TranscodePolicy transcodePolicy;
 
     @org.springframework.beans.factory.annotation.Value("${toys.scripts.dir}")
     private String scriptsDir;
@@ -51,8 +52,9 @@ public class TranscodeService {
         }
 
         // 超过最大重试:终态,停止重试(ack 消息,等待人工在投稿页重试)
-        if (job.getAttempts() >= job.getMaxAttempts()) {
-            log.warn("video {} exceeded max attempts ({}), marking TRANSCODE_FAILED", videoId, job.getMaxAttempts());
+        if (!transcodePolicy.shouldRetry(job.getAttempts(), job.getMaxAttempts())) {
+            log.warn("video {} exceeded max attempts: {}, marking TRANSCODE_FAILED",
+                    videoId, transcodePolicy.retryHint(job.getAttempts(), job.getMaxAttempts()));
             finalizeFailure(videoId, job, "转码重试次数用尽");
             return;
         }
@@ -114,9 +116,9 @@ public class TranscodeService {
             log.info("video {} transcoded and PUBLISHED", videoId);
         } catch (Exception e) {
             String error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-            log.error("transcode failed for video {} (attempt {}/{}): {}",
-                    videoId, job.getAttempts(), job.getMaxAttempts(), error);
-            if (job.getAttempts() >= job.getMaxAttempts()) {
+            log.error("transcode failed for video {}: {}, {}",
+                    videoId, error, transcodePolicy.retryHint(job.getAttempts(), job.getMaxAttempts()));
+            if (!transcodePolicy.shouldRetry(job.getAttempts(), job.getMaxAttempts())) {
                 finalizeFailure(videoId, job, error);
             } else {
                 jobMapper.update(null, new LambdaUpdateWrapper<TranscodeJob>()

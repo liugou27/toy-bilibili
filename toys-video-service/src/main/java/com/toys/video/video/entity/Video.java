@@ -42,6 +42,15 @@ public class Video {
     /** 拒绝原因 / 转码错误,展示给投稿人。 */
     private String note;
 
+    /** 文件内容摘要:断点续传恢复与秒传去重。 */
+    private String md5;
+
+    /** S3 multipart uploadId(未完成的分片上传会话)。 */
+    private String uploadId;
+
+    /** 分片大小(字节),续传时保持一致。 */
+    private Long partSize;
+
     private LocalDateTime publishedAt;
 
     private LocalDateTime createdAt;

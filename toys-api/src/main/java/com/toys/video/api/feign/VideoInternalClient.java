@@ -22,12 +22,14 @@ public interface VideoInternalClient {
      * @param durationSec 机审/转码探测出的时长,可空
      * @param width       视频宽,可空
      * @param height      视频高,可空
+     * @param note        附加说明(拒绝原因/转码错误),展示给投稿人,可空
      */
     record InternalStatusUpdate(
             String target,
             Long durationSec,
             Integer width,
-            Integer height
+            Integer height,
+            String note
     ) {
     }
 }

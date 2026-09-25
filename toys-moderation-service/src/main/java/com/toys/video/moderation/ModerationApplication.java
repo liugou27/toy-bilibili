@@ -7,7 +7,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = "com.toys.video.api.feign")
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = "com.toys.video")
 public class ModerationApplication {
 
     public static void main(String[] args) {

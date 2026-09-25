@@ -61,6 +61,11 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         }
 
         if (isWhitelisted(request.getMethod().name(), path)) {
+            // 白名单路径:有 token 则解析并附身份(如所有者查看自己的视频),无 token 匿名放行
+            ServerHttpRequest withUser = attachUserIfPresent(request);
+            if (withUser != request) {
+                return chain.filter(exchange.mutate().request(withUser).build());
+            }
             return chain.filter(exchange);
         }
 
@@ -91,6 +96,23 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             return true;
         }
         return "GET".equals(method) && PUBLIC_GET.stream().anyMatch(p -> MATCHER.match(p, path));
+    }
+
+    /** 若携带合法 Bearer token,则返回附带身份头的请求;否则返回原请求。 */
+    private ServerHttpRequest attachUserIfPresent(ServerHttpRequest request) {
+        String auth = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+        if (auth == null || !auth.startsWith("Bearer ")) {
+            return request;
+        }
+        try {
+            JwtUtil.TokenPayload payload = jwtUtil.parse(auth.substring(7));
+            return request.mutate()
+                    .header(Headers.USER_ID, String.valueOf(payload.userId()))
+                    .header(Headers.USER_ROLE, payload.role() == null ? "" : payload.role())
+                    .build();
+        } catch (JwtException e) {
+            return request;
+        }
     }
 
     private Mono<Void> reject(ServerWebExchange exchange, HttpStatus status, ErrorCode errorCode) {

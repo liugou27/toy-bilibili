@@ -33,6 +33,7 @@ public class GlobalErrorWebExceptionHandler implements ErrorWebExceptionHandler 
         }
         ErrorCode errorCode = resolve(ex);
         HttpStatus status = switch (errorCode) {
+            case NOT_FOUND -> HttpStatus.NOT_FOUND;
             case REQUEST_TIMEOUT -> HttpStatus.GATEWAY_TIMEOUT;
             case SERVICE_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
             default -> HttpStatus.INTERNAL_SERVER_ERROR;
@@ -54,6 +55,9 @@ public class GlobalErrorWebExceptionHandler implements ErrorWebExceptionHandler 
     }
 
     private ErrorCode resolve(Throwable ex) {
+        if (ex instanceof org.springframework.web.reactive.resource.NoResourceFoundException) {
+            return ErrorCode.NOT_FOUND;
+        }
         if (ex instanceof NotFoundException) {
             return ErrorCode.SERVICE_UNAVAILABLE;
         }

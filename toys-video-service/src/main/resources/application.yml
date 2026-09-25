@@ -1,0 +1,57 @@
+server:
+  port: 8102
+
+spring:
+  application:
+    name: toys-video-service
+  config:
+    import:
+      - optional:nacos:common.yml
+      - optional:nacos:toys-video-service.yml
+  cloud:
+    nacos:
+      server-addr: 127.0.0.1:8848
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5433/toys_video?currentSchema=video_db
+    username: postgres
+    password: ""
+  flyway:
+    enabled: true
+    default-schema: video_db
+    schemas: video_db
+  servlet:
+    multipart:
+      max-file-size: 2GB
+      max-request-size: 2200MB
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+rocketmq:
+  name-server: 127.0.0.1:9876
+  producer:
+    group: toys-video-producer
+    send-message-timeout: 10000
+
+toys:
+  minio:
+    endpoint: http://127.0.0.1:9000
+    access-key: minioadmin
+    secret-key: minioadmin
+  upload:
+    allowed-exts: mp4,mkv,mov,avi,flv
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{traceId:-}] %logger{36} - %msg%n"

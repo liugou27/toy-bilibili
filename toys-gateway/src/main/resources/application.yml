@@ -26,6 +26,10 @@ spring:
                 exposed-headers: X-Request-Id
                 allow-credentials: true
           routes:
+            - id: internal-blocked
+              uri: http://127.0.0.1:9
+              predicates:
+                - Path=/internal/**
             - id: user-service
               uri: lb://toys-user-service
               predicates:
@@ -47,9 +51,9 @@ spring:
 
 toys:
   jwt:
-    secret: ${toys.jwt.secret:toys-video-dev-secret-key-change-me-in-prod!}
+    secret: toys-video-dev-secret-key-change-me-in-prod!
   cors:
-    origins: ${toys.cors.origins:http://localhost:5173}
+    origins: http://localhost:5173
 
 management:
   endpoints:

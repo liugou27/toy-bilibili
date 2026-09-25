@@ -20,4 +20,8 @@ public class BizException extends RuntimeException {
     public static BizException of(ErrorCode errorCode) {
         return new BizException(errorCode);
     }
+
+    public static BizException of(ErrorCode errorCode, String message) {
+        return new BizException(errorCode, message);
+    }
 }

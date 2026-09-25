@@ -1,0 +1,50 @@
+server:
+  port: 8104
+
+spring:
+  application:
+    name: toys-media-service
+  config:
+    import:
+      - optional:nacos:common.yml
+      - optional:nacos:toys-media-service.yml
+  cloud:
+    nacos:
+      server-addr: 127.0.0.1:8848
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5433/toys_video?currentSchema=media_db
+    username: postgres
+    password: ""
+  flyway:
+    enabled: true
+    default-schema: media_db
+    schemas: media_db
+  threads:
+    virtual:
+      enabled: true
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+rocketmq:
+  name-server: 127.0.0.1:9876
+
+toys:
+  minio:
+    endpoint: http://127.0.0.1:9000
+    access-key: minioadmin
+    secret-key: minioadmin
+  scripts:
+    dir: ${TOYS_SCRIPTS_DIR:/Users/dsy/Desktop/dev/works/toys/scripts}
+    python-bin: python3
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{traceId:-}] %logger{36} - %msg%n"

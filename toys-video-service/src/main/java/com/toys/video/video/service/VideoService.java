@@ -152,6 +152,11 @@ public class VideoService {
             throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
         }
         VideoStatus current = VideoStatus.valueOf(video.getStatus());
+        if (current == target) {
+            // 同状态重入:幂等无操作(消息重投递场景)
+            log.info("video {} already {}, idempotent skip", id, current);
+            return;
+        }
         Set<VideoStatus> allowed = ALLOWED_TRANSITIONS.get(current);
         if (allowed == null || !allowed.contains(target)) {
             throw new BizException(ErrorCode.VIDEO_STATUS_CONFLICT,

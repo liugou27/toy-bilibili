@@ -1,0 +1,97 @@
+toys-video-service/src/main/java/com/toys/video/video/dto/VideoCard.java
+  s_17a5063aa38dd4::t_f6b3698885a2b7 1-17
+toys-user-service/src/main/java/com/toys/video/user/controller/UserInternalController.java
+  s_17a5063aa38dd4::t_3eae6e49277d03 1-39
+toys-user-service/src/main/java/com/toys/video/user/UserApplication.java
+  s_17a5063aa38dd4::t_d9a7c3aab6d6e7 8
+toys-video-service/src/main/java/com/toys/video/video/service/VideoService.java
+  s_17a5063aa38dd4::t_778bf0fb28015c 1-308
+toys-video-service/src/main/java/com/toys/video/video/controller/VideoController.java
+  s_17a5063aa38dd4::t_850220d8ec1a5c 1-71
+toys-moderation-service/src/main/java/com/toys/video/moderation/ModerationApplication.java
+  s_17a5063aa38dd4::t_7a0caeceea7870 10
+toys-gateway/src/main/java/com/toys/video/gateway/filter/AuthGlobalFilter.java
+  s_17a5063aa38dd4::t_49570a580e9b42 64-68
+  s_17a5063aa38dd4::t_a1bf59a440c1dc 101-117
+toys-media-service/src/main/java/com/toys/video/media/MediaApplication.java
+  s_17a5063aa38dd4::t_728a03dbc94d2a 10
+toys-video-service/src/main/java/com/toys/video/video/VideoApplication.java
+  s_17a5063aa38dd4::t_dcfca1abfac02f 12
+  s_17a5063aa38dd4::t_0c6ac99a641f01 7,9
+pom.xml
+  s_17a5063aa38dd4::t_3a23cbba1ca04b 113-119
+  s_17a5063aa38dd4::t_b3bb85d3b9901c 130
+toys-gateway/src/main/java/com/toys/video/gateway/error/GlobalErrorWebExceptionHandler.java
+  s_17a5063aa38dd4::t_8f8e7d69b50492 58
+  s_17a5063aa38dd4::t_bb46f8e9661574 59-60
+  s_17a5063aa38dd4::t_123fba115038e5 36
+toys-video-service/src/main/java/com/toys/video/video/config/MybatisPlusConfig.java
+  s_17a5063aa38dd4::t_b1161544fb20d6 1-18
+toys-common/pom.xml
+  s_17a5063aa38dd4::t_2eaaf2d1b96c7a 54-58
+  s_17a5063aa38dd4::t_8f2c3b6d184e98 53
+toys-video-service/src/main/java/com/toys/video/video/discovery/recommend/RecommendGateway.java
+  s_17a5063aa38dd4::t_03a95f0b4ca0c8 1-13
+toys-video-service/src/main/java/com/toys/video/video/discovery/recommend/LatestRecommendGateway.java
+  s_17a5063aa38dd4::t_1d365b5f4b90fd 1-26
+toys-video-service/src/main/java/com/toys/video/video/mq/VideoEventPublisher.java
+  s_17a5063aa38dd4::t_d14ca92b56e26a 1-35
+toys-video-service/pom.xml
+  s_17a5063aa38dd4::t_cb2b40200f34a8 40-47,56
+  s_17a5063aa38dd4::t_e5e92d0b636d17 57-60
+toys-video-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_388c5ad1b84538 1-57
+toys-video-service/src/main/resources/db/migration/V1__init_video.sql
+  s_17a5063aa38dd4::t_ea2381bd07da21 1-22
+toys-video-service/src/main/java/com/toys/video/video/mapper/VideoMapper.java
+  s_17a5063aa38dd4::t_abda7c07b77595 1-9
+toys-gateway/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_c18d1fe927bb06 29-32
+  s_17a5063aa38dd4::t_1d7f5a12171d47 54,56
+toys-video-service/src/main/java/com/toys/video/video/dto/UploadResponse.java
+  s_17a5063aa38dd4::t_1dbd6db3669dcc 1-4
+toys-video-service/src/main/java/com/toys/video/video/service/PlayCountService.java
+  s_17a5063aa38dd4::t_c374d858f6507e 1-66
+toys-common/src/main/java/com/toys/video/common/exception/BizException.java
+  s_17a5063aa38dd4::t_d8940aa039dc7e 23-26
+toys-common/src/main/java/com/toys/video/common/api/R.java
+  s_17a5063aa38dd4::t_2ff82c76a0a368 3-4,23
+toys-video-service/src/main/java/com/toys/video/video/discovery/search/PgLikeSearchGateway.java
+  s_17a5063aa38dd4::t_6050ff02fa139f 1-29
+toys-video-service/src/main/java/com/toys/video/video/dto/VideoDetail.java
+  s_17a5063aa38dd4::t_2775df3e718cc7 1-22
+toys-video-service/src/main/java/com/toys/video/video/discovery/search/SearchGateway.java
+  s_17a5063aa38dd4::t_34c8e573c526ca 1-13
+toys-api/src/main/java/com/toys/video/api/feign/VideoInternalClient.java
+  s_17a5063aa38dd4::t_f799a035005d7d 25,31-32
+toys-video-service/src/main/java/com/toys/video/video/config/MinioConfig.java
+  s_17a5063aa38dd4::t_74b5daec3a8350 1-63
+toys-gateway/pom.xml
+  s_17a5063aa38dd4::t_6875450b975211 33-36
+  s_17a5063aa38dd4::t_9ac8ccb8676467 32
+toys-user-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_f1ab57190fb8b2 29
+toys-video-service/src/main/java/com/toys/video/video/controller/MyVideoController.java
+  s_17a5063aa38dd4::t_e62f77a6ce1b3a 1-32
+toys-video-service/src/main/java/com/toys/video/video/entity/Video.java
+  s_17a5063aa38dd4::t_f71c08feda9136 1-50
+toys-video-service/src/main/java/com/toys/video/video/controller/VideoInternalController.java
+  s_17a5063aa38dd4::t_789161d9e41db0 13
+  s_17a5063aa38dd4::t_39401255babc7d 1-12,14-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a92cabe616153a453276c5572ebf62b7ddd8b43d",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

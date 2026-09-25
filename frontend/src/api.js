@@ -16,9 +16,9 @@ http.interceptors.response.use(
     const body = resp.data
     if (body && typeof body.code === 'number') {
       if (body.code === 0) return body.data
-      if (body.code === 1001) {
+      if (body.code === 1001 && auth.user) {
         auth.logout()
-        ElMessage.error(body.message || '请先登录')
+        ElMessage.error(body.message || '登录已过期')
         router.push({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
         return Promise.reject(new Error(body.message))
       }

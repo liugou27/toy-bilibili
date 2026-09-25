@@ -36,7 +36,7 @@
 - MyBatis-Plus + Flyway
 - jjwt 0.12.x + Spring Security(仅 user-service 做认证,其余服务网关透传身份)
 - MinIO Java SDK 8.x
-- 中间件镜像(均原生支持 arm64):Nacos 2.5.x standalone、RocketMQ 5.3.x(NameServer+Broker)、Redis 7.4、MinIO 最新版
+- 中间件镜像(均原生支持 arm64):Nacos 3.0.3 standalone、RocketMQ 5.3.x(NameServer+Broker)、Redis 7.4、MinIO(见部署说明)
 - 前端:Vue 3 + Vite + Element Plus + hls.js + axios + vue-router
 - Python 脚本:仅标准库(subprocess 调 ffmpeg/ffprobe),无第三方依赖
 
@@ -59,10 +59,10 @@
 
 | 中间件 | 端口 | 用途 |
 |---|---|---|
-| Nacos 2.5.x(standalone,内嵌存储) | 8848 / 9848 | 服务注册 + 配置中心(namespace: `toys-video`) |
+| Nacos 3.0.3(standalone,内嵌存储) | 8848 / 9848 | 服务注册 + 配置中心 |
 | RocketMQ NameServer + Broker | 9876 / 10911-10912,10909 | 异步事件 |
 | Redis 7.4 | 6379 | 播放量缓冲(后续缓存扩展) |
-| MinIO | 9000(API)/ 9001(控制台) | 对象存储 |
+| MinIO | 9000(API)/ 9001(控制台) | 对象存储(本机进程,Rosetta 转译官方 amd64 二进制,官方已停止 arm64 发布与 Docker Hub 分发) |
 
 PostgreSQL 用本机原生实例(不用容器),**schema-per-service** 模拟 database-per-service:`user_db` / `video_db` / `moderation_db` / `media_db`。
 

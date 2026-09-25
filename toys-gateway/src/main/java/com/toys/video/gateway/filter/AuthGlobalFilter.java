@@ -43,6 +43,10 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             "/api/videos/**",
             "/media/**"
     );
+    /** 匿名可用的写接口:播放计数(观看者未必登录)。 */
+    private static final List<String> PUBLIC_POST = List.of(
+            "/api/videos/*/play"
+    );
 
     private final JwtUtil jwtUtil;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -95,7 +99,10 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         if (WHITELIST.stream().anyMatch(p -> MATCHER.match(p, path))) {
             return true;
         }
-        return "GET".equals(method) && PUBLIC_GET.stream().anyMatch(p -> MATCHER.match(p, path));
+        if ("GET".equals(method) && PUBLIC_GET.stream().anyMatch(p -> MATCHER.match(p, path))) {
+            return true;
+        }
+        return "POST".equals(method) && PUBLIC_POST.stream().anyMatch(p -> MATCHER.match(p, path));
     }
 
     /** 若携带合法 Bearer token,则返回附带身份头的请求;否则返回原请求。 */

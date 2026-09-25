@@ -44,7 +44,13 @@ public class ModerationService {
         report.setVideoId(videoId);
         report.setAutoVerdict(verdict);
         report.setAutoReport(result.toString());
-        report.setDecision("PENDING");
+        boolean autoReject = AUTO_FAIL_ACTIONS.contains(verdict);
+        // 硬失败自动拒绝:报告直接终态,不再进人工队列
+        report.setDecision(autoReject ? "REJECTED" : "PENDING");
+        if (autoReject) {
+            report.setRejectReason("机审自动拒绝:内容不合规或文件异常");
+            report.setDecidedAt(LocalDateTime.now());
+        }
         try {
             reportMapper.insert(report);
         } catch (org.springframework.dao.DuplicateKeyException e) {
@@ -53,11 +59,11 @@ public class ModerationService {
         }
 
         VideoInternalClient.InternalStatusUpdate update = new VideoInternalClient.InternalStatusUpdate(
-                AUTO_FAIL_ACTIONS.contains(verdict) ? VideoStatus.REJECTED.name() : VideoStatus.UNDER_REVIEW.name(),
+                autoReject ? VideoStatus.REJECTED.name() : VideoStatus.UNDER_REVIEW.name(),
                 longOrNull(meta.path("duration_sec")),
                 intOrNull(meta.path("width")),
                 intOrNull(meta.path("height")),
-                AUTO_FAIL_ACTIONS.contains(verdict) ? "机审未通过:内容不合规或文件异常" : null);
+                autoReject ? "机审未通过:内容不合规或文件异常" : null);
         applyStatus(videoId, update);
         log.info("video {} auto-screened: {} -> {}", videoId, verdict, update.target());
     }

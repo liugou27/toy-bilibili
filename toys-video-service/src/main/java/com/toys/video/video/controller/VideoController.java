@@ -5,10 +5,14 @@ import com.toys.video.common.api.R;
 import com.toys.video.common.context.UserContext;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
+import com.toys.video.video.dto.CommentItem;
+import com.toys.video.video.dto.DanmakuItem;
 import com.toys.video.video.dto.InitUploadResponse;
 import com.toys.video.video.dto.UploadResponse;
 import com.toys.video.video.dto.VideoCard;
 import com.toys.video.video.dto.VideoDetail;
+import com.toys.video.video.service.CommentService;
+import com.toys.video.video.service.DanmakuService;
 import com.toys.video.video.service.InteractionService;
 import com.toys.video.video.service.PlayCountService;
 import com.toys.video.video.service.VideoService;
@@ -25,6 +29,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/videos")
 @RequiredArgsConstructor
@@ -33,6 +39,8 @@ public class VideoController {
     private final VideoService videoService;
     private final PlayCountService playCountService;
     private final InteractionService interactionService;
+    private final CommentService commentService;
+    private final DanmakuService danmakuService;
 
     /** 上传(multipart):file + title + description。小文件一步上传。 */
     @PostMapping
@@ -155,6 +163,56 @@ public class VideoController {
         Long userId = requireUser();
         videoService.retryTranscode(id, userId, UserContext.userRole());
         return R.ok();
+    }
+
+    // ==================== 评论 ====================
+
+    /** 发评论:需登录,正文非空、≤500 字且不命中敏感词。 */
+    @PostMapping("/{id}/comments")
+    public R<CommentItem> postComment(@PathVariable Long id,
+                                      @jakarta.validation.Valid @RequestBody CommentRequest req) {
+        return R.ok(commentService.post(id, requireUser(), req.content()));
+    }
+
+    public record CommentRequest(
+            @jakarta.validation.constraints.NotBlank(message = "评论内容不能为空")
+            @jakarta.validation.constraints.Size(max = 500, message = "评论不能超过500字") String content) {
+    }
+
+    /** 评论分页:按发表时间倒序,公开可读。 */
+    @GetMapping("/{id}/comments")
+    public R<PageResult<CommentItem>> comments(@PathVariable Long id,
+                                               @RequestParam(defaultValue = "1") long page,
+                                               @RequestParam(defaultValue = "20") long size) {
+        return R.ok(commentService.page(id, page, Math.min(size, 50)));
+    }
+
+    /** 删除评论:仅评论作者本人,不是视频 owner。 */
+    @DeleteMapping("/{id}/comments/{commentId}")
+    public R<Void> deleteComment(@PathVariable Long id, @PathVariable Long commentId) {
+        commentService.delete(id, commentId, requireUser());
+        return R.ok();
+    }
+
+    // ==================== 弹幕 ====================
+
+    /** 发弹幕:需登录,timeSec≥0,正文非空、≤100 字且不命中敏感词。 */
+    @PostMapping("/{id}/danmaku")
+    public R<DanmakuItem> postDanmaku(@PathVariable Long id,
+                                      @jakarta.validation.Valid @RequestBody DanmakuRequest req) {
+        return R.ok(danmakuService.post(id, requireUser(), req.timeSec(), req.content()));
+    }
+
+    public record DanmakuRequest(
+            @jakarta.validation.constraints.NotNull(message = "播放位置不能为空") Double timeSec,
+            @jakarta.validation.constraints.NotBlank(message = "弹幕内容不能为空")
+            @jakarta.validation.constraints.Size(max = 100, message = "弹幕不能超过100字") String content) {
+    }
+
+    /** 全量弹幕:按播放位置正序,公开可读,上限 2000 条。 */
+    @GetMapping("/{id}/danmaku")
+    public R<List<DanmakuItem>> danmaku(@PathVariable Long id) {
+        return R.ok(danmakuService.list(id));
     }
 
     private Long requireUser() {

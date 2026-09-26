@@ -10,7 +10,7 @@ import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.moderation.entity.ModerationReport;
 import com.toys.video.moderation.mapper.ModerationReportMapper;
-import com.toys.video.moderation.text.SensitiveWordFilter;
+import com.toys.video.common.text.SensitiveWordFilter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

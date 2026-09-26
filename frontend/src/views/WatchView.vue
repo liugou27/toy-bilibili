@@ -3,6 +3,23 @@
     <div class="player-shell">
       <div class="player-wrap">
         <video ref="playerEl" class="player" controls playsinline></video>
+        <div v-if="!playerError" class="danmaku-layer" :class="{ 'is-off': !danmakuOn }">
+          <span
+            v-for="d in flyingDanmaku"
+            :key="d.key"
+            class="danmaku-item"
+            :style="{ top: `${6 + d.lane * 26}px` }"
+            @animationend="removeFlying(d.key)"
+          >{{ d.content }}</span>
+        </div>
+        <button
+          v-if="!playerError"
+          class="danmaku-toggle"
+          :class="danmakuOn ? 'is-on' : 'is-off'"
+          :aria-pressed="danmakuOn"
+          :title="danmakuOn ? '关闭弹幕' : '开启弹幕'"
+          @click="danmakuOn = !danmakuOn"
+        >弹</button>
         <div v-if="resumeHint !== null" class="resume-bar">
           <span>上次看到 {{ fmtTime(resumeHint) }}</span>
           <button class="resume-jump" @click="jumpToResume">跳转继续</button>
@@ -15,6 +32,21 @@
         </div>
       </div>
     </div>
+
+    <div class="danmaku-bar">
+      <template v-if="auth.user">
+        <input
+          v-model="danmakuInput"
+          class="danmaku-input"
+          maxlength="100"
+          placeholder="发个弹幕见证此刻"
+          @keydown.enter="onDanmakuKeydown"
+        />
+        <button class="danmaku-send" :disabled="danmakuPending || !danmakuInput.trim()" @click="sendDanmaku">发送</button>
+      </template>
+      <router-link v-else class="login-pill" :to="{ path: '/login', query: { redirect: route.fullPath } }">登录后发弹幕</router-link>
+    </div>
+
     <section v-if="detail" v-reveal class="watch-info reveal">
       <div class="title-row">
         <h1 class="watch-title">{{ detail.title }}</h1>
@@ -34,12 +66,52 @@
       </div>
       <p v-if="detail.description" class="desc">{{ detail.description }}</p>
     </section>
+
+    <section v-reveal class="comment-section reveal">
+      <h2 class="comment-title">评论 {{ commentTotal }} 条</h2>
+      <div v-if="auth.user" class="comment-editor">
+        <textarea
+          v-model="commentInput"
+          class="comment-textarea"
+          maxlength="500"
+          rows="3"
+          placeholder="写下你的评论"
+        ></textarea>
+        <div class="comment-editor-foot">
+          <span class="comment-counter">{{ commentInput.length }}/500</span>
+          <button class="comment-publish" :disabled="commentPending || !commentInput.trim()" @click="submitComment">发布</button>
+        </div>
+      </div>
+      <div v-else class="comment-editor comment-editor-guest">
+        <router-link class="login-pill" :to="{ path: '/login', query: { redirect: route.fullPath } }">登录后发表评论</router-link>
+      </div>
+      <ul v-if="comments.length" v-loading="commentLoading" class="comment-list">
+        <li v-for="item in comments" :key="item.id" class="comment-item">
+          <span class="comment-avatar">{{ avatarChar(item.username) }}</span>
+          <div class="comment-body">
+            <div class="comment-head">
+              <span class="comment-user">{{ item.username }}</span>
+              <span class="comment-time">{{ fmtRelative(item.createdAt) }}</span>
+            </div>
+            <p class="comment-content">{{ item.content }}</p>
+          </div>
+          <button v-if="isMyComment(item)" class="comment-delete" @click="removeComment(item)">删除</button>
+        </li>
+      </ul>
+      <p v-else-if="commentLoaded && !commentLoading" class="comment-empty">还没有评论,来抢沙发</p>
+      <div v-if="totalPages > 1" class="comment-pager">
+        <button class="page-btn" :disabled="commentPage <= 1 || commentLoading" @click="goPage(commentPage - 1)">上一页</button>
+        <span class="page-indicator">{{ commentPage }} / {{ totalPages }}</span>
+        <button class="page-btn" :disabled="commentPage >= totalPages || commentLoading" @click="goPage(commentPage + 1)">下一页</button>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import Hls from 'hls.js'
 import http from '../api.js'
 import { auth } from '../auth.js'
@@ -150,19 +222,194 @@ function destroyHls() {
   }
 }
 
+/** 弹幕:按 timeSec 升序维护游标,timeupdate 驱动,±0.5s 窗口内触发飞行。 */
+const danmakuOn = ref(true)
+const danmakuList = ref([])
+const danmakuInput = ref('')
+const danmakuPending = ref(false)
+const flyingDanmaku = ref([])
+let danmakuCursor = 0
+let lastVideoTime = 0
+let danmakuSeq = 0
+let lastLane = -1
+
+async function loadDanmaku() {
+  try {
+    const data = await http.get(`/videos/${route.params.id}/danmaku`)
+    danmakuList.value = (Array.isArray(data) ? data : [])
+      .map((d) => ({ id: d.id, timeSec: Number(d.timeSec) || 0, content: d.content, shown: false }))
+      .sort((a, b) => a.timeSec - b.timeSec)
+    danmakuCursor = 0
+    lastVideoTime = 0
+  } catch {
+    danmakuList.value = []
+  }
+}
+
+function lowerBound(timeSec) {
+  const list = danmakuList.value
+  let lo = 0
+  let hi = list.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (list[mid].timeSec < timeSec) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+/** 游标推进:向后 seek 重置游标,已展示/被跳过的弹幕不补播;关闭时只消费不渲染。 */
+function onDanmakuTick() {
+  const video = playerEl.value
+  if (!video) return
+  const t = video.currentTime
+  if (t < lastVideoTime - 1) {
+    danmakuCursor = lowerBound(t - 0.5)
+  }
+  lastVideoTime = t
+  const list = danmakuList.value
+  while (danmakuCursor < list.length && list[danmakuCursor].timeSec <= t + 0.5) {
+    const item = list[danmakuCursor]
+    danmakuCursor++
+    if (item.shown) continue
+    item.shown = true
+    if (danmakuOn.value && item.timeSec >= t - 0.5) {
+      flyDanmaku(item.content)
+    }
+  }
+}
+
+function flyDanmaku(content) {
+  let lane = Math.floor(Math.random() * 4)
+  if (lane === lastLane) lane = (lane + 1) % 4
+  lastLane = lane
+  flyingDanmaku.value.push({ key: ++danmakuSeq, content, lane })
+}
+
+function removeFlying(key) {
+  flyingDanmaku.value = flyingDanmaku.value.filter((d) => d.key !== key)
+}
+
+function insertDanmakuSorted(item) {
+  const list = danmakuList.value
+  let i = list.length
+  while (i > 0 && list[i - 1].timeSec > item.timeSec) i--
+  list.splice(i, 0, item)
+}
+
+function onDanmakuKeydown(e) {
+  if (e.isComposing || e.keyCode === 229) return
+  sendDanmaku()
+}
+
+/** 发送弹幕:timeSec 取播放器当前时间,成功后立即飞行。 */
+async function sendDanmaku() {
+  const content = danmakuInput.value.trim()
+  if (!content || danmakuPending.value) return
+  const timeSec = Math.floor(playerEl.value?.currentTime || 0)
+  danmakuPending.value = true
+  try {
+    await http.post(`/videos/${route.params.id}/danmaku`, { timeSec, content })
+    danmakuInput.value = ''
+    if (danmakuOn.value) flyDanmaku(content)
+    insertDanmakuSorted({ id: `local-${danmakuSeq}`, timeSec, content, shown: true })
+  } catch {
+    // 违规内容 1004 等错误已由 api.js 拦截器 toast
+  } finally {
+    danmakuPending.value = false
+  }
+}
+
+/** 评论区 */
+const COMMENT_SIZE = 20
+const comments = ref([])
+const commentTotal = ref(0)
+const commentPage = ref(1)
+const commentLoaded = ref(false)
+const commentLoading = ref(false)
+const commentInput = ref('')
+const commentPending = ref(false)
+const totalPages = computed(() => Math.max(1, Math.ceil(commentTotal.value / COMMENT_SIZE)))
+
+async function loadComments(page = commentPage.value) {
+  commentLoading.value = true
+  try {
+    const data = await http.get(`/videos/${route.params.id}/comments`, { params: { page, size: COMMENT_SIZE } })
+    comments.value = Array.isArray(data?.list) ? data.list : []
+    commentTotal.value = Number(data?.total || 0)
+    commentPage.value = Number(data?.page || page)
+  } catch {
+    // 错误提示由 api.js 拦截器统一弹出
+  } finally {
+    commentLoaded.value = true
+    commentLoading.value = false
+  }
+}
+
+function goPage(page) {
+  const target = Math.min(Math.max(1, page), totalPages.value)
+  if (target === commentPage.value || commentLoading.value) return
+  loadComments(target)
+}
+
+async function submitComment() {
+  const content = commentInput.value.trim()
+  if (!content || commentPending.value) return
+  commentPending.value = true
+  try {
+    await http.post(`/videos/${route.params.id}/comments`, { content })
+    commentInput.value = ''
+    ElMessage.success('评论已发布')
+    await loadComments(1)
+  } catch {
+    // 违规内容 1004 等错误已由 api.js 拦截器 toast
+  } finally {
+    commentPending.value = false
+  }
+}
+
+function isMyComment(item) {
+  return !!auth.user && String(auth.user.id) === String(item.userId)
+}
+
+async function removeComment(item) {
+  try {
+    await ElMessageBox.confirm('删除后不可恢复,确定删除这条评论吗?', '删除评论', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  try {
+    await http.delete(`/videos/${route.params.id}/comments/${item.id}`)
+    if (comments.value.length <= 1 && commentPage.value > 1) {
+      commentPage.value -= 1
+    }
+    await loadComments()
+  } catch {
+    // 错误提示由 api.js 拦截器统一弹出
+  }
+}
+
 onMounted(() => {
   const video = playerEl.value
   if (!video) return
   video.addEventListener('loadedmetadata', onLoadedMetadata)
   video.addEventListener('timeupdate', onTimeUpdate)
+  video.addEventListener('timeupdate', onDanmakuTick)
 })
 onMounted(load)
+onMounted(loadDanmaku)
+onMounted(() => loadComments(1))
 onBeforeUnmount(destroyHls)
 onBeforeUnmount(() => {
   const video = playerEl.value
   if (!video) return
   video.removeEventListener('loadedmetadata', onLoadedMetadata)
   video.removeEventListener('timeupdate', onTimeUpdate)
+  video.removeEventListener('timeupdate', onDanmakuTick)
   // 卸载时补报一次进度,避免最后不足 10s 的观看丢失
   if (video.duration > 0 && video.currentTime > 0) {
     savePosition(video.currentTime)
@@ -178,6 +425,23 @@ function fmtTime(sec) {
 }
 function fmtDate(d) {
   return new Date(d).toLocaleDateString('zh-CN')
+}
+function fmtRelative(d) {
+  const t = new Date(d).getTime()
+  if (Number.isNaN(t)) return ''
+  const diff = Date.now() - t
+  const min = 60_000
+  const hour = 60 * min
+  const day = 24 * hour
+  if (diff < min) return '刚刚'
+  if (diff < hour) return `${Math.floor(diff / min)} 分钟前`
+  if (diff < day) return `${Math.floor(diff / hour)} 小时前`
+  if (diff < 30 * day) return `${Math.floor(diff / day)} 天前`
+  return new Date(t).toLocaleDateString('zh-CN')
+}
+function avatarChar(name) {
+  const ch = (name || '').trim().charAt(0)
+  return (ch || '匿').toUpperCase()
 }
 
 // v-reveal:进入视口后加 .is-visible 触发渐入(样式见 style.css 的 .reveal)
@@ -255,6 +519,130 @@ onBeforeUnmount(() => {
   font-size: 14px;
   color: rgba(255, 255, 255, 0.65);
 }
+
+.danmaku-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity 0.25s var(--ease), visibility 0.25s;
+}
+.danmaku-layer.is-off {
+  opacity: 0;
+  visibility: hidden;
+}
+.danmaku-item {
+  position: absolute;
+  left: 100%;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #fff;
+  white-space: nowrap;
+  text-shadow:
+    1px 0 1px #000,
+    -1px 0 1px #000,
+    0 1px 1px #000,
+    0 -1px 1px #000,
+    1px 1px 2px rgba(0, 0, 0, 0.8),
+    -1px -1px 2px rgba(0, 0, 0, 0.8);
+  animation: danmaku-fly 8s linear forwards;
+  will-change: transform;
+}
+@keyframes danmaku-fly {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-100vw - 100% - 48px)); }
+}
+.danmaku-toggle {
+  position: absolute;
+  right: 14px;
+  bottom: 58px;
+  z-index: 4;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, transform 0.2s var(--ease);
+}
+.danmaku-toggle:hover { transform: scale(1.06); }
+.danmaku-toggle.is-on { background: var(--accent); color: #fff; }
+.danmaku-toggle.is-off { background: rgba(0, 0, 0, 0.55); color: rgba(255, 255, 255, 0.4); }
+.danmaku-toggle.is-off::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  height: 1.5px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.8);
+  transform: rotate(-45deg);
+}
+
+.danmaku-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0 4px;
+}
+.danmaku-input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.danmaku-input::placeholder { color: var(--text-tertiary); }
+.danmaku-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.14);
+}
+.danmaku-send {
+  flex: none;
+  height: 38px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+.danmaku-send:hover { background: var(--accent-hover); }
+.danmaku-send:disabled { opacity: 0.4; cursor: default; }
+.login-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+.login-pill:hover { background: rgba(0, 113, 227, 0.14); }
 
 .watch-info { padding-bottom: 8px; }
 .title-row {
@@ -355,5 +743,161 @@ onBeforeUnmount(() => {
   line-height: 1.7;
   color: var(--text);
   white-space: pre-wrap;
+}
+
+.comment-section { padding: 8px 0 64px; }
+.comment-title {
+  margin: 24px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.comment-editor { margin-top: 16px; }
+.comment-editor-guest { display: flex; }
+.comment-textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 76px;
+  padding: 12px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.comment-textarea::placeholder { color: var(--text-tertiary); }
+.comment-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.14);
+}
+.comment-editor-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 10px;
+}
+.comment-counter {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.comment-publish {
+  height: 34px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+.comment-publish:hover { background: var(--accent-hover); }
+.comment-publish:disabled { opacity: 0.4; cursor: default; }
+.comment-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.comment-item {
+  display: flex;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.comment-avatar {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+  user-select: none;
+}
+.comment-body {
+  flex: 1;
+  min-width: 0;
+}
+.comment-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.comment-user {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.comment-time {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.comment-content {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.comment-delete {
+  flex: none;
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.comment-delete:hover { color: var(--danger); }
+.comment-empty {
+  margin: 32px 0 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+.comment-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 20px;
+}
+.page-btn {
+  height: 32px;
+  padding: 0 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, opacity 0.2s;
+}
+.page-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-tertiary);
+}
+.page-btn:disabled { opacity: 0.4; cursor: default; }
+.page-indicator {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 </style>

@@ -1,4 +1,4 @@
-package com.toys.video.moderation.text;
+package com.toys.video.common.text;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 敏感词过滤器:DFA 字典树逐字符匹配,用于标题/简介文本机审。
+ * 敏感词过滤器:DFA 字典树逐字符匹配,用于标题/简介机审与评论/弹幕等 UGC 文本筛查。
  * 词库 classpath sensitive-words.txt,每行一词,# 开头为注释;匹配不区分大小写。
  */
 @Slf4j

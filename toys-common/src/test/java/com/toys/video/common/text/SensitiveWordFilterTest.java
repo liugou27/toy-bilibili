@@ -1,4 +1,4 @@
-package com.toys.video.moderation.text;
+package com.toys.video.common.text;
 
 import org.junit.jupiter.api.Test;
 

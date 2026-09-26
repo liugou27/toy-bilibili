@@ -59,6 +59,8 @@ public class VideoService {
     private final VideoEventPublisher eventPublisher;
     private final InteractionService interactionService;
     private final HistoryService historyService;
+    private final CommentService commentService;
+    private final DanmakuService danmakuService;
     private final io.minio.MinioClient minioClient;
     private final SearchGateway searchGateway;
     private final RecommendGateway recommendGateway;
@@ -312,9 +314,11 @@ public class VideoService {
         }
         removePrefix(MinioConfig.BUCKET_HLS, video.getId() + "/");
         videoMapper.deleteById(id);
-        // 级联清理互动数据:点赞/收藏/播放历史
+        // 级联清理互动数据:点赞/收藏/播放历史/评论/弹幕
         interactionService.deleteByVideo(id);
         historyService.deleteByVideo(id);
+        commentService.deleteByVideo(id);
+        danmakuService.deleteByVideo(id);
         evictListCache();
         log.info("video {} deleted by user {}", id, requesterId);
     }

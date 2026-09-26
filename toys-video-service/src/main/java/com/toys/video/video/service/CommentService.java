@@ -1,0 +1,123 @@
+package com.toys.video.video.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.toys.video.api.feign.UserInternalClient;
+import com.toys.video.common.api.PageResult;
+import com.toys.video.common.exception.BizException;
+import com.toys.video.common.exception.ErrorCode;
+import com.toys.video.common.text.SensitiveWordFilter;
+import com.toys.video.video.dto.CommentItem;
+import com.toys.video.video.entity.Comment;
+import com.toys.video.video.mapper.CommentMapper;
+import com.toys.video.video.mapper.VideoMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/**
+ * 评论领域服务:comments 的唯一写入方。
+ * 发评论必须通过敏感词筛查,命中即拒绝;删除仅限评论作者本人。
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class CommentService {
+
+    /** 评论正文长度上限,与表字段 VARCHAR(500) 一致。 */
+    static final int MAX_CONTENT_LENGTH = 500;
+
+    private final CommentMapper commentMapper;
+    private final VideoMapper videoMapper;
+    private final UserInternalClient userInternalClient;
+    private final SensitiveWordFilter sensitiveWordFilter;
+
+    /** 发评论:视频必须存在,正文非空、≤500 字且不命中敏感词。 */
+    public CommentItem post(Long videoId, Long userId, String content) {
+        requireVideo(videoId);
+        Comment comment = new Comment();
+        comment.setVideoId(videoId);
+        comment.setUserId(userId);
+        comment.setContent(validateContent(content));
+        comment.setCreatedAt(LocalDateTime.now());
+        commentMapper.insert(comment);
+        return new CommentItem(comment.getId(), userId,
+                usernameOf(userId), comment.getContent(), comment.getCreatedAt());
+    }
+
+    /** 评论分页:按发表时间倒序,公开可读。 */
+    public PageResult<CommentItem> page(Long videoId, long page, long size) {
+        IPage<Comment> p = commentMapper.selectPage(new Page<>(page, size),
+                new LambdaQueryWrapper<Comment>()
+                        .eq(Comment::getVideoId, videoId)
+                        .orderByDesc(Comment::getCreatedAt));
+        Map<Long, String> names = fetchUserNames(p.getRecords().stream()
+                .map(Comment::getUserId).distinct().toList());
+        List<CommentItem> items = p.getRecords().stream()
+                .map(c -> new CommentItem(c.getId(), c.getUserId(),
+                        names.get(c.getUserId()), c.getContent(), c.getCreatedAt()))
+                .toList();
+        return new PageResult<>(items, p.getTotal(), p.getCurrent(), p.getSize());
+    }
+
+    /** 删除评论:仅评论作者本人,不是视频 owner。 */
+    public void delete(Long videoId, Long commentId, Long requesterId) {
+        Comment comment = commentMapper.selectById(commentId);
+        if (comment == null || !comment.getVideoId().equals(videoId)) {
+            throw BizException.of(ErrorCode.NOT_FOUND, "评论不存在");
+        }
+        if (!comment.getUserId().equals(requesterId)) {
+            throw BizException.of(ErrorCode.FORBIDDEN);
+        }
+        commentMapper.deleteById(commentId);
+    }
+
+    /** 视频删除时级联清理评论。 */
+    public void deleteByVideo(Long videoId) {
+        commentMapper.delete(new LambdaQueryWrapper<Comment>()
+                .eq(Comment::getVideoId, videoId));
+    }
+
+    /** 正文校验:非空、≤500 字,命中敏感词即拒绝;返回 trim 后正文。 */
+    String validateContent(String content) {
+        if (content == null || content.isBlank()) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "评论内容不能为空");
+        }
+        if (content.length() > MAX_CONTENT_LENGTH) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "评论不能超过" + MAX_CONTENT_LENGTH + "字");
+        }
+        String trimmed = content.trim();
+        if (!sensitiveWordFilter.screen(trimmed).isEmpty()) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "内容包含违规词汇");
+        }
+        return trimmed;
+    }
+
+    private void requireVideo(Long videoId) {
+        if (videoMapper.selectById(videoId) == null) {
+            throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
+        }
+    }
+
+    private String usernameOf(Long userId) {
+        return fetchUserNames(List.of(userId)).getOrDefault(userId, "用户" + userId);
+    }
+
+    private Map<Long, String> fetchUserNames(List<Long> userIds) {
+        try {
+            return userInternalClient.batch(userIds).data().stream()
+                    .collect(Collectors.toMap(UserInternalClient.UserBrief::id,
+                            UserInternalClient.UserBrief::username, (a, b) -> a));
+        } catch (Exception e) {
+            log.warn("fetch user names failed: {}", e.getMessage());
+            return userIds.stream().collect(Collectors.toMap(Function.identity(), id -> "用户" + id, (a, b) -> a));
+        }
+    }
+}

@@ -1,0 +1,27 @@
+frontend/src/views/WatchView.vue
+  s_17a5063aa38dd4::t_3adea044f99ae2 62,76
+toys-common/src/main/java/com/toys/video/common/config/JacksonConfig.java
+  s_17a5063aa38dd4::t_3df65998fd8883 8-9,17
+toys-video-service/src/main/java/com/toys/video/video/dto/VideoDetail.java
+  s_17a5063aa38dd4::t_3adea044f99ae2 12,23
+toys-video-service/src/main/java/com/toys/video/video/entity/Video.java
+  s_17a5063aa38dd4::t_3adea044f99ae2 42
+toys-video-service/src/main/java/com/toys/video/video/dto/VideoCard.java
+  s_17a5063aa38dd4::t_3adea044f99ae2 10,21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ae5d29ada2e38510c85a624a069a57d3c266667b",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

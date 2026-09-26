@@ -1,0 +1,25 @@
+scripts/e2e_check.py
+  s_17a5063aa38dd4::t_53509aab2de2f0 47-48
+  s_17a5063aa38dd4::t_200e3cc465a7ac 1-23,25-40,42-46,49-50,53-104,108-158,160-165,180-327,329,334,337,346-349,351-361
+  s_17a5063aa38dd4::t_4e0ced013be080 24,41,350
+  s_17a5063aa38dd4::t_5d9c0661a55d95 105-107,176-179
+  s_17a5063aa38dd4::t_e091064fcd9071 51-52
+  s_17a5063aa38dd4::t_98b80cb992963d 159,328,330-333,335-336,338-345
+  s_17a5063aa38dd4::t_fd53a2ba58a032 166-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e05cb3656a843fcdd8d18eef8864171e9ab0341b",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

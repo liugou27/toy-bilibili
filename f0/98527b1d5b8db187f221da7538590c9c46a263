@@ -1,0 +1,34 @@
+toys-media-service/src/main/java/com/toys/video/media/controller/TranscodeInternalController.java
+  s_17a5063aa38dd4::t_c74334287ca131 1-30
+toys-media-service/src/main/java/com/toys/video/media/service/TranscodeCleanupService.java
+  s_17a5063aa38dd4::t_c74334287ca131 1-23
+toys-api/src/main/java/com/toys/video/api/feign/TranscodeInternalClient.java
+  s_17a5063aa38dd4::t_aebcb962c9f445 1-15
+toys-moderation-service/src/main/java/com/toys/video/moderation/controller/ModerationInternalController.java
+  s_17a5063aa38dd4::t_aebcb962c9f445 1-30
+toys-api/src/main/java/com/toys/video/api/feign/ModerationInternalClient.java
+  s_17a5063aa38dd4::t_aebcb962c9f445 1-15
+toys-moderation-service/src/main/java/com/toys/video/moderation/service/ModerationService.java
+  s_17a5063aa38dd4::t_aebcb962c9f445 122-137
+toys-video-service/src/main/java/com/toys/video/video/service/VideoService.java
+  s_17a5063aa38dd4::t_c74334287ca131 68-69
+  s_17a5063aa38dd4::t_edf740bb1a2161 325-335
+docs/superpowers/specs/2026-09-25-video-platform-microservices-design.md
+  s_17a5063aa38dd4::t_07a26f65aa4012 298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f098527b1d5b8db187f221da7538590c9c46a263",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

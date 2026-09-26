@@ -6,7 +6,7 @@
         <nav class="nav-links">
           <a href="/" @click.prevent="$router.push('/')">发现</a>
           <a v-if="auth.user" href="/upload" @click.prevent="$router.push('/upload')">投稿</a>
-          <a v-if="auth.user" href="/my" @click.prevent="$router.push('/my')">我的投稿</a>
+          <a v-if="auth.user" href="/my" @click.prevent="$router.push('/my')">我的空间</a>
           <a v-if="auth.isAdmin()" href="/admin/review" @click.prevent="$router.push('/admin/review')">审核后台</a>
         </nav>
         <div class="nav-actions">

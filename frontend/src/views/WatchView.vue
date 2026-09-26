@@ -1,25 +1,8 @@
 <template>
   <div class="watch">
-    <div class="player-shell">
+    <div class="watch-main">
       <div class="player-wrap">
-        <video ref="playerEl" class="player" controls playsinline></video>
-        <div v-if="!playerError" class="danmaku-layer" :class="{ 'is-off': !danmakuOn }">
-          <span
-            v-for="d in flyingDanmaku"
-            :key="d.key"
-            class="danmaku-item"
-            :style="{ top: `${6 + d.lane * 26}px` }"
-            @animationend="removeFlying(d.key)"
-          >{{ d.content }}</span>
-        </div>
-        <button
-          v-if="!playerError"
-          class="danmaku-toggle"
-          :class="danmakuOn ? 'is-on' : 'is-off'"
-          :aria-pressed="danmakuOn"
-          :title="danmakuOn ? '关闭弹幕' : '开启弹幕'"
-          @click="danmakuOn = !danmakuOn"
-        >弹</button>
+        <div ref="playerEl" class="player"></div>
         <div v-if="resumeHint !== null" class="resume-bar">
           <span>上次看到 {{ fmtTime(resumeHint) }}</span>
           <button class="resume-jump" @click="jumpToResume">跳转继续</button>
@@ -31,100 +14,115 @@
           <el-button type="primary" size="large" @click="retry">重试</el-button>
         </div>
       </div>
-    </div>
 
-    <div class="danmaku-bar">
-      <template v-if="auth.user">
-        <input
-          v-model="danmakuInput"
-          class="danmaku-input"
-          maxlength="100"
-          placeholder="发个弹幕见证此刻"
-          @keydown.enter="onDanmakuKeydown"
-        />
-        <button class="danmaku-send" :disabled="danmakuPending || !danmakuInput.trim()" @click="sendDanmaku">发送</button>
-      </template>
-      <router-link v-else class="login-pill" :to="{ path: '/login', query: { redirect: route.fullPath } }">登录后发弹幕</router-link>
-    </div>
-
-    <section v-if="detail" v-reveal class="watch-info reveal">
-      <div class="title-row">
-        <h1 class="watch-title">{{ detail.title }}</h1>
-        <button class="like-btn" :class="{ 'is-liked': likedByMe }" :disabled="likePending" @click="toggleLike">
-          <span class="like-icon">{{ likedByMe ? '♥' : '♡' }}</span>
-          <span>{{ fmtCount(likeCount) }}</span>
-        </button>
-      </div>
-      <div class="meta-bar">
-        <span class="owner">{{ detail.ownerName }}</span>
-        <span class="divider">·</span>
-        <span>{{ fmtCount(detail.playCount) }} 播放</span>
-        <template v-if="detail.publishedAt">
-          <span class="divider">·</span>
-          <span>{{ fmtDate(detail.publishedAt) }} 发布</span>
+      <div class="danmaku-bar">
+        <template v-if="auth.user">
+          <input
+            v-model="danmakuInput"
+            class="danmaku-input"
+            maxlength="100"
+            placeholder="发个弹幕见证此刻"
+            @keydown.enter="onDanmakuKeydown"
+          />
+          <button class="danmaku-send" :disabled="danmakuPending || !danmakuInput.trim()" @click="sendDanmaku">发送</button>
         </template>
+        <router-link v-else class="login-pill" :to="{ path: '/login', query: { redirect: route.fullPath } }">登录后发弹幕</router-link>
       </div>
-      <p v-if="detail.description" class="desc">{{ detail.description }}</p>
-    </section>
 
-    <section v-if="relatedList.length" v-reveal class="related-section reveal">
-      <h2 class="related-title">相关推荐</h2>
-      <ul class="related-list">
-        <li v-for="v in relatedList" :key="v.id" class="related-item" @click="goRelated(v.id)">
-          <div class="related-thumb">
-            <img v-if="v.poster" :src="v.poster" loading="lazy" :alt="v.title" />
-            <div v-else class="related-thumb-placeholder">暂无封面</div>
-            <span v-if="v.durationSec" class="related-duration">{{ fmtTime(v.durationSec) }}</span>
+      <section v-if="detail" v-reveal class="watch-info reveal">
+        <div class="title-row">
+          <h1 class="watch-title">{{ detail.title }}</h1>
+          <div class="action-group">
+            <button class="action-btn" :class="{ 'is-liked': likedByMe }" :disabled="likePending" @click="toggleLike">
+              <span class="action-icon">{{ likedByMe ? '♥' : '♡' }}</span>
+              <span>{{ fmtCount(likeCount) }}</span>
+            </button>
+            <button class="action-btn" :class="{ 'is-faved': favoritedByMe }" :disabled="favPending" @click="toggleFavorite">
+              <span class="action-icon">{{ favoritedByMe ? '★' : '☆' }}</span>
+              <span>{{ favoritedByMe ? '已收藏' : '收藏' }}</span>
+            </button>
           </div>
-          <div class="related-body">
-            <div class="related-item-title">{{ v.title }}</div>
-            <div class="related-meta">
-              <span>{{ v.ownerName || 'UP主' }}</span>
-              <span>{{ fmtCount(v.playCount) }} 播放</span>
+        </div>
+        <div class="meta-bar">
+          <span class="owner">{{ detail.ownerName }}</span>
+          <span class="divider">·</span>
+          <span>{{ fmtCount(detail.playCount) }} 播放</span>
+          <template v-if="detail.publishedAt">
+            <span class="divider">·</span>
+            <span>{{ fmtDate(detail.publishedAt) }} 发布</span>
+          </template>
+        </div>
+        <p v-if="detail.description" class="desc">{{ detail.description }}</p>
+      </section>
+
+      <section v-reveal class="comment-section reveal">
+        <h2 class="comment-title">评论 {{ commentTotal }} 条</h2>
+        <div v-if="auth.user" class="comment-editor">
+          <textarea
+            v-model="commentInput"
+            class="comment-textarea"
+            maxlength="500"
+            rows="3"
+            placeholder="写下你的评论"
+          ></textarea>
+          <div class="comment-editor-foot">
+            <span class="comment-counter">{{ commentInput.length }}/500</span>
+            <button class="comment-publish" :disabled="commentPending || !commentInput.trim()" @click="submitComment">发布</button>
+          </div>
+        </div>
+        <div v-else class="comment-editor comment-editor-guest">
+          <router-link class="login-pill" :to="{ path: '/login', query: { redirect: route.fullPath } }">登录后发表评论</router-link>
+        </div>
+        <ul v-if="comments.length" v-loading="commentLoading" class="comment-list">
+          <li v-for="item in comments" :key="item.id" class="comment-item">
+            <span class="comment-avatar">{{ avatarChar(item.nickname || item.username) }}</span>
+            <div class="comment-body">
+              <div class="comment-head">
+                <span class="comment-user">{{ item.nickname || item.username }}</span>
+                <span class="comment-time">{{ fmtRelative(item.createdAt) }}</span>
+              </div>
+              <p class="comment-content">{{ item.content }}</p>
             </div>
-          </div>
-        </li>
-      </ul>
-    </section>
+            <button v-if="isMyComment(item)" class="comment-delete" @click="removeComment(item)">删除</button>
+          </li>
+        </ul>
+        <p v-else-if="commentLoaded && !commentLoading" class="comment-empty">还没有评论,来抢沙发</p>
+        <div v-if="totalPages > 1" class="comment-pager">
+          <button class="page-btn" :disabled="commentPage <= 1 || commentLoading" @click="goPage(commentPage - 1)">上一页</button>
+          <span class="page-indicator">{{ commentPage }} / {{ totalPages }}</span>
+          <button class="page-btn" :disabled="commentPage >= totalPages || commentLoading" @click="goPage(commentPage + 1)">下一页</button>
+        </div>
+      </section>
+    </div>
 
-    <section v-reveal class="comment-section reveal">
-      <h2 class="comment-title">评论 {{ commentTotal }} 条</h2>
-      <div v-if="auth.user" class="comment-editor">
-        <textarea
-          v-model="commentInput"
-          class="comment-textarea"
-          maxlength="500"
-          rows="3"
-          placeholder="写下你的评论"
-        ></textarea>
-        <div class="comment-editor-foot">
-          <span class="comment-counter">{{ commentInput.length }}/500</span>
-          <button class="comment-publish" :disabled="commentPending || !commentInput.trim()" @click="submitComment">发布</button>
+    <aside class="watch-side">
+      <div v-if="detail" class="owner-card">
+        <span class="owner-avatar">{{ avatarChar(detail.ownerName) }}</span>
+        <div class="owner-body">
+          <span class="owner-name">{{ detail.ownerName }}</span>
+          <span class="owner-sub">{{ fmtCount(detail.playCount) }} 播放</span>
         </div>
       </div>
-      <div v-else class="comment-editor comment-editor-guest">
-        <router-link class="login-pill" :to="{ path: '/login', query: { redirect: route.fullPath } }">登录后发表评论</router-link>
-      </div>
-      <ul v-if="comments.length" v-loading="commentLoading" class="comment-list">
-        <li v-for="item in comments" :key="item.id" class="comment-item">
-          <span class="comment-avatar">{{ avatarChar(item.nickname || item.username) }}</span>
-          <div class="comment-body">
-            <div class="comment-head">
-              <span class="comment-user">{{ item.nickname || item.username }}</span>
-              <span class="comment-time">{{ fmtRelative(item.createdAt) }}</span>
+      <section v-if="relatedList.length" v-reveal class="related-section reveal">
+        <h2 class="related-title">相关推荐</h2>
+        <ul class="related-list">
+          <li v-for="v in relatedList" :key="v.id" class="related-item" @click="goRelated(v.id)">
+            <div class="related-thumb">
+              <img v-if="v.poster" :src="v.poster" loading="lazy" :alt="v.title" />
+              <div v-else class="related-thumb-placeholder">暂无封面</div>
+              <span v-if="v.durationSec" class="related-duration">{{ fmtTime(v.durationSec) }}</span>
             </div>
-            <p class="comment-content">{{ item.content }}</p>
-          </div>
-          <button v-if="isMyComment(item)" class="comment-delete" @click="removeComment(item)">删除</button>
-        </li>
-      </ul>
-      <p v-else-if="commentLoaded && !commentLoading" class="comment-empty">还没有评论,来抢沙发</p>
-      <div v-if="totalPages > 1" class="comment-pager">
-        <button class="page-btn" :disabled="commentPage <= 1 || commentLoading" @click="goPage(commentPage - 1)">上一页</button>
-        <span class="page-indicator">{{ commentPage }} / {{ totalPages }}</span>
-        <button class="page-btn" :disabled="commentPage >= totalPages || commentLoading" @click="goPage(commentPage + 1)">下一页</button>
-      </div>
-    </section>
+            <div class="related-body">
+              <div class="related-item-title">{{ v.title }}</div>
+              <div class="related-meta">
+                <span>{{ v.ownerName || 'UP主' }}</span>
+                <span>{{ fmtCount(v.playCount) }} 播放</span>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </section>
+    </aside>
   </div>
 </template>
 
@@ -132,6 +130,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import Artplayer from 'artplayer'
+import ArtplayerPluginDanmuku from 'artplayer-plugin-danmuku'
 import Hls from 'hls.js'
 import http from '../api.js'
 import { auth } from '../auth.js'
@@ -141,26 +141,31 @@ const router = useRouter()
 const playerEl = ref(null)
 const detail = ref(null)
 const playerError = ref(false)
+let art = null
 let hls = null
 
 const likeCount = ref(0)
 const likedByMe = ref(false)
 const likePending = ref(false)
+const favoritedByMe = ref(false)
+const favPending = ref(false)
 const resumeHint = ref(null)
+const playCounted = ref(false)
 let lastPosSentAt = 0
 
 async function load() {
   playerError.value = false
-  destroyHls()
-  playerEl.value?.pause()
+  destroyArt()
   resumeHint.value = null
+  playCounted.value = false
   detail.value = await http.get(`/videos/${route.params.id}`)
   likeCount.value = Number(detail.value.likeCount || 0)
   likedByMe.value = !!detail.value.likedByMe
-  // 播放量异步计数
-  http.post(`/videos/${route.params.id}/play`).catch(() => {})
+  favoritedByMe.value = !!detail.value.favoritedByMe
   if (detail.value.playbackUrl) {
     startPlayer(detail.value.playbackUrl)
+  } else {
+    playerError.value = true
   }
 }
 
@@ -185,28 +190,42 @@ async function toggleLike() {
   }
 }
 
-function onLoadedMetadata() {
-  const video = playerEl.value
-  const resume = detail.value?.resumePosition
-  if (video && resume > 5 && resume < video.duration - 10) {
-    resumeHint.value = resume
+/** 收藏/取消收藏:乐观切换,失败回滚;未登录跳登录页并在返回后回到本页。 */
+async function toggleFavorite() {
+  if (!auth.user) {
+    ElMessage.info('登录后即可收藏')
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
+    return
+  }
+  if (favPending.value) return
+  const target = !favoritedByMe.value
+  favPending.value = true
+  favoritedByMe.value = target
+  try {
+    if (target) {
+      await http.post(`/videos/${route.params.id}/favorite`)
+    } else {
+      await http.delete(`/videos/${route.params.id}/favorite`)
+    }
+  } catch {
+    favoritedByMe.value = !target
+  } finally {
+    favPending.value = false
   }
 }
 
 function jumpToResume() {
-  const video = playerEl.value
-  if (video) video.currentTime = resumeHint.value
+  if (art) art.currentTime = resumeHint.value
   resumeHint.value = null
 }
 
 /** 播放中每 10s 节流上报进度;未登录不上报。 */
 function onTimeUpdate() {
-  const video = playerEl.value
-  if (!video || video.paused || !video.duration) return
+  if (!art || art.paused || !art.duration) return
   const now = Date.now()
   if (now - lastPosSentAt < 10_000) return
   lastPosSentAt = now
-  savePosition(video.currentTime)
+  savePosition(art.currentTime)
 }
 
 function savePosition(position) {
@@ -214,29 +233,114 @@ function savePosition(position) {
   http.post(`/videos/${route.params.id}/position`, { position }).catch(() => {})
 }
 
-function startPlayer(url) {
-  const video = playerEl.value
+function onPlayerReady() {
+  if (!art) return
+  const resume = detail.value?.resumePosition
+  if (resume > 5 && resume < art.duration - 10) {
+    resumeHint.value = resume
+  }
+}
+
+/** 播放量计数:每次进入视频只在首次播放时上报一次。 */
+function onFirstPlay() {
+  if (playCounted.value) return
+  playCounted.value = true
+  http.post(`/videos/${route.params.id}/play`).catch(() => {})
+}
+
+function handlePlayerError() {
+  if (playerError.value) return
+  playerError.value = true
+  // 延迟一拍销毁,避免在播放器自身事件回调里同步 destroy;校验实例防止与重试竞争
+  const failing = art
+  setTimeout(() => {
+    if (art === failing) destroyArt()
+  })
+}
+
+/** hls.js 接入:保留 Hls.isSupported 分支与 Safari 原生 fallback。 */
+function attachM3u8(video, url) {
+  destroyHls()
   if (Hls.isSupported()) {
     hls = new Hls({ maxBufferLength: 30 })
     hls.loadSource(url)
     hls.attachMedia(video)
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (data.fatal) {
-        playerError.value = true
         destroyHls()
+        handlePlayerError()
       }
     })
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = url
   } else {
-    playerError.value = true
+    handlePlayerError()
   }
+}
+
+function startPlayer(url) {
+  const container = playerEl.value
+  if (!container) return
+  const videoId = route.params.id
+  art = new Artplayer({
+    container,
+    url,
+    type: 'm3u8',
+    customType: { m3u8: attachM3u8 },
+    plugins: [
+      ArtplayerPluginDanmuku({
+        danmuku: async () => {
+          try {
+            const data = await http.get(`/videos/${videoId}/danmaku`)
+            return (Array.isArray(data) ? data : [])
+              .map((d) => ({ time: Number(d.timeSec) || 0, text: d.content, color: '#FFFFFF' }))
+              .sort((a, b) => a.time - b.time)
+          } catch {
+            return []
+          }
+        },
+        speed: 5,
+        margin: [10, '25%'],
+        opacity: 1,
+        color: '#FFFFFF',
+        mode: 0,
+        fontSize: 20,
+      }),
+    ],
+    autoplay: false,
+    setting: true,
+    playbackRate: true,
+    aspectRatio: true,
+    flip: true,
+    fullscreen: true,
+    fullscreenWeb: true,
+    miniProgressBar: true,
+    airplay: true,
+    pip: true,
+    screenshot: true,
+  })
+  art.on('ready', onPlayerReady)
+  art.on('video:play', onFirstPlay)
+  art.on('video:timeupdate', onTimeUpdate)
+  art.on('video:error', handlePlayerError)
 }
 
 function retry() {
   playerError.value = false
+  destroyArt()
+  if (detail.value?.playbackUrl) {
+    startPlayer(detail.value.playbackUrl)
+  } else {
+    playerError.value = true
+  }
+}
+
+function destroyArt(removeHtml = true) {
   destroyHls()
-  if (detail.value?.playbackUrl) startPlayer(detail.value.playbackUrl)
+  if (art) {
+    art.destroy(removeHtml)
+    art = null
+  }
 }
 
 function destroyHls() {
@@ -246,97 +350,24 @@ function destroyHls() {
   }
 }
 
-/** 弹幕:按 timeSec 升序维护游标,timeupdate 驱动,±0.5s 窗口内触发飞行。 */
-const danmakuOn = ref(true)
-const danmakuList = ref([])
+/** 弹幕发送:timeSec 取播放器当前时间,成功后经插件 emit 立即上屏。 */
 const danmakuInput = ref('')
 const danmakuPending = ref(false)
-const flyingDanmaku = ref([])
-let danmakuCursor = 0
-let lastVideoTime = 0
-let danmakuSeq = 0
-let lastLane = -1
-
-async function loadDanmaku() {
-  try {
-    const data = await http.get(`/videos/${route.params.id}/danmaku`)
-    danmakuList.value = (Array.isArray(data) ? data : [])
-      .map((d) => ({ id: d.id, timeSec: Number(d.timeSec) || 0, content: d.content, shown: false }))
-      .sort((a, b) => a.timeSec - b.timeSec)
-    danmakuCursor = 0
-    lastVideoTime = 0
-  } catch {
-    danmakuList.value = []
-  }
-}
-
-function lowerBound(timeSec) {
-  const list = danmakuList.value
-  let lo = 0
-  let hi = list.length
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1
-    if (list[mid].timeSec < timeSec) lo = mid + 1
-    else hi = mid
-  }
-  return lo
-}
-
-/** 游标推进:向后 seek 重置游标,已展示/被跳过的弹幕不补播;关闭时只消费不渲染。 */
-function onDanmakuTick() {
-  const video = playerEl.value
-  if (!video) return
-  const t = video.currentTime
-  if (t < lastVideoTime - 1) {
-    danmakuCursor = lowerBound(t - 0.5)
-  }
-  lastVideoTime = t
-  const list = danmakuList.value
-  while (danmakuCursor < list.length && list[danmakuCursor].timeSec <= t + 0.5) {
-    const item = list[danmakuCursor]
-    danmakuCursor++
-    if (item.shown) continue
-    item.shown = true
-    if (danmakuOn.value && item.timeSec >= t - 0.5) {
-      flyDanmaku(item.content)
-    }
-  }
-}
-
-function flyDanmaku(content) {
-  let lane = Math.floor(Math.random() * 4)
-  if (lane === lastLane) lane = (lane + 1) % 4
-  lastLane = lane
-  flyingDanmaku.value.push({ key: ++danmakuSeq, content, lane })
-}
-
-function removeFlying(key) {
-  flyingDanmaku.value = flyingDanmaku.value.filter((d) => d.key !== key)
-}
-
-function insertDanmakuSorted(item) {
-  const list = danmakuList.value
-  let i = list.length
-  while (i > 0 && list[i - 1].timeSec > item.timeSec) i--
-  list.splice(i, 0, item)
-}
 
 function onDanmakuKeydown(e) {
   if (e.isComposing || e.keyCode === 229) return
   sendDanmaku()
 }
 
-/** 发送弹幕:timeSec 取播放器当前时间,成功后立即飞行。 */
 async function sendDanmaku() {
   const content = danmakuInput.value.trim()
   if (!content || danmakuPending.value) return
-  const timeSec = Math.floor(playerEl.value?.currentTime || 0)
+  const timeSec = Math.floor(art?.currentTime || 0)
   danmakuPending.value = true
   try {
     await http.post(`/videos/${route.params.id}/danmaku`, { timeSec, content })
     danmakuInput.value = ''
-    if (danmakuOn.value) flyDanmaku(content)
-    insertDanmakuSorted({ id: `local-${danmakuSeq}`, timeSec, content, shown: true })
+    art?.danmuku?.emit({ text: content, time: art.currentTime, color: '#FFFFFF' })
   } catch {
     // 违规内容 1004 等错误已由 api.js 拦截器 toast
   } finally {
@@ -440,33 +471,19 @@ watch(() => route.params.id, (id) => {
   if (!id) return
   window.scrollTo({ top: 0 })
   load()
-  loadDanmaku()
   loadComments(1)
   loadRelated()
 })
 
-onMounted(() => {
-  const video = playerEl.value
-  if (!video) return
-  video.addEventListener('loadedmetadata', onLoadedMetadata)
-  video.addEventListener('timeupdate', onTimeUpdate)
-  video.addEventListener('timeupdate', onDanmakuTick)
-})
 onMounted(load)
-onMounted(loadDanmaku)
 onMounted(loadRelated)
 onMounted(() => loadComments(1))
-onBeforeUnmount(destroyHls)
 onBeforeUnmount(() => {
-  const video = playerEl.value
-  if (!video) return
-  video.removeEventListener('loadedmetadata', onLoadedMetadata)
-  video.removeEventListener('timeupdate', onTimeUpdate)
-  video.removeEventListener('timeupdate', onDanmakuTick)
   // 卸载时补报一次进度,避免最后不足 10s 的观看丢失
-  if (video.duration > 0 && video.currentTime > 0) {
-    savePosition(video.currentTime)
+  if (art && art.duration > 0 && art.currentTime > 0) {
+    savePosition(art.currentTime)
   }
+  destroyArt(false)
 })
 
 function fmtCount(n) {
@@ -528,13 +545,23 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.watch { max-width: 860px; margin: 0 auto; }
-
-/* 播放器通栏:外扩负边距至视口全宽 */
-.player-shell {
-  width: 100vw;
-  margin-left: calc(50% - 50vw);
+.watch {
+  max-width: 1360px;
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
 }
+.watch-main {
+  flex: 1;
+  min-width: 0;
+}
+.watch-side {
+  flex: none;
+  width: 340px;
+}
+
+/* 播放器 */
 .player-wrap {
   position: relative;
   background: #000;
@@ -544,13 +571,13 @@ onBeforeUnmount(() => {
 }
 .player {
   width: 100%;
-  aspect-ratio: 16/9;
-  display: block;
+  aspect-ratio: 16 / 9;
   background: #000;
 }
 .player-error {
   position: absolute;
   inset: 0;
+  z-index: 100;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -573,75 +600,44 @@ onBeforeUnmount(() => {
   color: rgba(255, 255, 255, 0.65);
 }
 
-.danmaku-layer {
+.resume-bar {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  z-index: 2;
-  overflow: hidden;
-  pointer-events: none;
-  transition: opacity 0.25s var(--ease), visibility 0.25s;
-}
-.danmaku-layer.is-off {
-  opacity: 0;
-  visibility: hidden;
-}
-.danmaku-item {
-  position: absolute;
-  left: 100%;
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 1.4;
-  color: #fff;
-  white-space: nowrap;
-  text-shadow:
-    1px 0 1px #000,
-    -1px 0 1px #000,
-    0 1px 1px #000,
-    0 -1px 1px #000,
-    1px 1px 2px rgba(0, 0, 0, 0.8),
-    -1px -1px 2px rgba(0, 0, 0, 0.8);
-  animation: danmaku-fly 8s linear forwards;
-  will-change: transform;
-}
-@keyframes danmaku-fly {
-  from { transform: translateX(0); }
-  to { transform: translateX(calc(-100vw - 100% - 48px)); }
-}
-.danmaku-toggle {
-  position: absolute;
-  right: 14px;
-  bottom: 58px;
-  z-index: 4;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 16px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  color: rgba(255, 255, 255, 0.9);
+  color: #fff;
   font-size: 14px;
-  font-weight: 600;
+}
+.resume-jump {
+  border: none;
+  border-radius: 999px;
+  padding: 4px 12px;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s, transform 0.2s var(--ease);
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
 }
-.danmaku-toggle:hover { transform: scale(1.06); }
-.danmaku-toggle.is-on { background: var(--accent); color: #fff; }
-.danmaku-toggle.is-off { background: rgba(0, 0, 0, 0.55); color: rgba(255, 255, 255, 0.4); }
-.danmaku-toggle.is-off::after {
-  content: '';
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  top: 50%;
-  height: 1.5px;
-  border-radius: 1px;
-  background: rgba(255, 255, 255, 0.8);
-  transform: rotate(-45deg);
+.resume-jump:hover { filter: brightness(1.1); }
+.resume-close {
+  border: none;
+  background: transparent;
+  padding: 2px 6px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 16px;
+  line-height: 1;
 }
+.resume-close:hover { color: #fff; }
 
 .danmaku-bar {
   display: flex;
@@ -704,7 +700,7 @@ onBeforeUnmount(() => {
   gap: 16px;
 }
 .watch-title {
-  margin: 28px 0 0;
+  margin: 20px 0 0;
   font-size: 28px;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -712,12 +708,17 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
 }
-.like-btn {
+.action-group {
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 24px;
+}
+.action-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 30px;
   padding: 5px 14px;
   border: 1px solid var(--hairline);
   border-radius: 999px;
@@ -727,53 +728,21 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   transition: color 0.2s, border-color 0.2s, background 0.2s;
 }
-.like-btn:hover { color: var(--text); }
-.like-btn:disabled { cursor: default; opacity: 0.7; }
-.like-btn .like-icon { font-size: 16px; line-height: 1; }
-.like-btn.is-liked {
+.action-btn:hover { color: var(--text); }
+.action-btn:disabled { cursor: default; opacity: 0.7; }
+.action-btn .action-icon { font-size: 16px; line-height: 1; }
+.action-btn.is-liked {
   color: var(--danger);
   border-color: rgba(255, 59, 48, 0.35);
   background: rgba(255, 59, 48, 0.08);
   font-weight: 600;
 }
-.resume-bar {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 10px 7px 16px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: #fff;
-  font-size: 14px;
+.action-btn.is-faved {
+  color: var(--accent);
+  border-color: rgba(0, 113, 227, 0.35);
+  background: rgba(0, 113, 227, 0.08);
+  font-weight: 600;
 }
-.resume-jump {
-  border: none;
-  border-radius: 999px;
-  padding: 4px 12px;
-  cursor: pointer;
-  background: var(--accent);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 500;
-}
-.resume-jump:hover { filter: brightness(1.1); }
-.resume-close {
-  border: none;
-  background: transparent;
-  padding: 2px 6px;
-  cursor: pointer;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 16px;
-  line-height: 1;
-}
-.resume-close:hover { color: #fff; }
 .meta-bar {
   margin-top: 12px;
   display: flex;
@@ -798,26 +767,65 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
 }
 
-.related-section { padding: 8px 0; }
+.owner-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.owner-avatar {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 600;
+  user-select: none;
+}
+.owner-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.owner-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.owner-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.related-section { padding: 0; }
 .related-title {
-  margin: 28px 0 0;
-  font-size: 20px;
+  margin: 24px 0 0;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--text);
 }
 .related-list {
   list-style: none;
-  margin: 16px 0 0;
+  margin: 12px 0 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 10px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .related-item {
   display: flex;
   gap: 12px;
-  padding: 10px;
+  padding: 8px;
   border-radius: 14px;
   cursor: pointer;
   transition: transform 0.3s var(--ease), background 0.3s var(--ease), box-shadow 0.3s var(--ease);
@@ -1049,5 +1057,18 @@ onBeforeUnmount(() => {
   font-size: 13px;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1024px) {
+  .watch {
+    flex-direction: column;
+    gap: 0;
+  }
+  .watch-side {
+    width: 100%;
+  }
+  .owner-card {
+    margin-top: 16px;
+  }
 }
 </style>

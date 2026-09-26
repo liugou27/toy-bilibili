@@ -12,21 +12,27 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Set;
 
-/** 播放量:Redis 缓冲 + 定时批量回写 DB,削峰且重启不丢(AOF 兜底)。 */
+/** 播放量:Redis 缓冲 + 定时批量回写 DB,削峰且重启不丢(AOF 兜底);同客户端 24h 去重。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PlayCountService {
 
     private static final String KEY_PREFIX = "play:buffer:";
+    private static final String DUP_KEY_PREFIX = "play:dup:";
+    /** 同一客户端对同一视频 24h 内只计一次。 */
+    private static final Duration DUP_TTL = Duration.ofHours(24);
 
     private final StringRedisTemplate redis;
     private final VideoMapper videoMapper;
 
-    public void recordPlay(Long videoId) {
+    public void recordPlay(Long videoId, String clientKey) {
         Video video = videoMapper.selectById(videoId);
         if (video == null) {
             throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
@@ -34,9 +40,42 @@ public class PlayCountService {
         if (!VideoStatus.PUBLISHED.name().equals(video.getStatus())) {
             throw BizException.of(ErrorCode.VIDEO_NOT_PUBLISHED);
         }
+        String dupKey = DUP_KEY_PREFIX + videoId + ":" + md5Hex(clientKey);
+        Boolean first = redis.opsForValue().setIfAbsent(dupKey, "1", DUP_TTL);
+        if (!Boolean.TRUE.equals(first)) {
+            return;
+        }
         String key = KEY_PREFIX + videoId;
         redis.opsForValue().increment(key);
         redis.expire(key, Duration.ofHours(2));
+    }
+
+    /** 客户端去重键:X-Forwarded-For 首段(缺失回退 remoteAddr)+ "|" + 用户标识,匿名记 anon。 */
+    public static String clientKeyOf(String forwardedFor, String remoteAddr, Long userId) {
+        String ip = remoteAddr;
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            String first = forwardedFor.split(",", -1)[0].trim();
+            if (!first.isEmpty()) {
+                ip = first;
+            }
+        }
+        return (ip == null ? "" : ip) + "|" + (userId == null ? "anon" : userId);
+    }
+
+    /** 小写十六进制 md5:null 视同空串。 */
+    static String md5Hex(String input) {
+        try {
+            byte[] digest = MessageDigest.getInstance("MD5")
+                    .digest((input == null ? "" : input).getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16))
+                        .append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("JVM 缺少 MD5 实现", e);
+        }
     }
 
     @Scheduled(fixedDelay = 10_000, initialDelay = 30_000)

@@ -40,7 +40,7 @@ public class VideoUploadedConsumer implements RocketMQListener<MessageExt> {
         try {
             log.info("consumed VIDEO_UPLOADED videoId={}, reconsumeTimes={}",
                     event.videoId(), message.getReconsumeTimes());
-            moderationService.moderate(event.videoId(), event.objectKey());
+            moderationService.moderate(event.videoId(), event.objectKey(), event.title(), event.description());
         } finally {
             MDC.remove("traceId");
         }

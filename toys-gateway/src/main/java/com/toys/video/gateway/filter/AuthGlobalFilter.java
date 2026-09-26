@@ -50,10 +50,13 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     );
 
     private final JwtUtil jwtUtil;
+    private final org.springframework.data.redis.core.ReactiveStringRedisTemplate redis;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public AuthGlobalFilter(@Value("${toys.jwt.secret}") String secret) {
+    public AuthGlobalFilter(@Value("${toys.jwt.secret}") String secret,
+                            org.springframework.data.redis.core.ReactiveStringRedisTemplate redis) {
         this.jwtUtil = new JwtUtil(secret, Long.MAX_VALUE / 1000 - 1);
+        this.redis = redis;
     }
 
     @Override
@@ -71,12 +74,9 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         }
 
         if (isWhitelisted(request.getMethod().name(), path)) {
-            // 白名单路径:有 token 则解析并附身份(如所有者查看自己的视频),无 token 匿名放行
-            ServerHttpRequest withUser = attachUserIfPresent(request);
-            if (withUser != request) {
-                return chain.filter(exchange.mutate().request(withUser).build());
-            }
-            return chain.filter(exchange);
+            // 白名单路径:有有效 token 则附身份(如所有者查看自己的视频),否则匿名放行
+            return attachUserIfPresent(request)
+                    .flatMap(mutated -> chain.filter(exchange.mutate().request(mutated).build()));
         }
 
         String token = auth == null ? null : (auth.startsWith("Bearer ") ? auth.substring(7) : auth);
@@ -90,15 +90,25 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             return reject(exchange, HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED);
         }
 
-        if (path.startsWith("/api/admin") && !"ADMIN".equals(payload.role())) {
-            return reject(exchange, HttpStatus.FORBIDDEN, ErrorCode.FORBIDDEN);
-        }
-
-        ServerHttpRequest mutated = request.mutate()
-                .header(Headers.USER_ID, String.valueOf(payload.userId()))
-                .header(Headers.USER_ROLE, payload.role() == null ? "" : payload.role())
-                .build();
-        return chain.filter(exchange.mutate().request(mutated).build());
+        // 注销黑名单(白名单语义):jti 已从服务端删除的 token 立即失效。
+        // 网关是 WebFlux,IO 线程禁止 block(),必须响应式组合。
+        // Redis 故障时降级放行(仍有 JWT 验签兜底),key 明确不存在才判定注销
+        Mono<Boolean> alive = payload.jti() == null
+                ? Mono.just(Boolean.FALSE)
+                : redis.hasKey("auth:token:" + payload.jti()).onErrorReturn(Boolean.TRUE);
+        return alive.flatMap(ok -> {
+            if (!Boolean.TRUE.equals(ok)) {
+                return reject(exchange, HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED);
+            }
+            if (path.startsWith("/api/admin") && !"ADMIN".equals(payload.role())) {
+                return reject(exchange, HttpStatus.FORBIDDEN, ErrorCode.FORBIDDEN);
+            }
+            ServerHttpRequest mutated = request.mutate()
+                    .header(Headers.USER_ID, String.valueOf(payload.userId()))
+                    .header(Headers.USER_ROLE, payload.role() == null ? "" : payload.role())
+                    .build();
+            return chain.filter(exchange.mutate().request(mutated).build());
+        });
     }
 
     private boolean isWhitelisted(String method, String path) {
@@ -129,21 +139,27 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         return token.indexOf(' ') >= 0;
     }
 
-    /** 若携带合法 Bearer token,则返回附带身份头的请求;否则返回原请求。 */
-    private ServerHttpRequest attachUserIfPresent(ServerHttpRequest request) {
+    /** 若携带合法且未注销的 Bearer token,发出附带身份头的请求;否则发出原请求(匿名)。 */
+    private Mono<ServerHttpRequest> attachUserIfPresent(ServerHttpRequest request) {
         String auth = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (auth == null || !auth.startsWith("Bearer ")) {
-            return request;
+            return Mono.just(request);
         }
+        JwtUtil.TokenPayload payload;
         try {
-            JwtUtil.TokenPayload payload = jwtUtil.parse(auth.substring(7));
-            return request.mutate()
-                    .header(Headers.USER_ID, String.valueOf(payload.userId()))
-                    .header(Headers.USER_ROLE, payload.role() == null ? "" : payload.role())
-                    .build();
+            payload = jwtUtil.parse(auth.substring(7));
         } catch (JwtException e) {
-            return request;
+            return Mono.just(request);
         }
+        Mono<Boolean> alive = payload.jti() == null
+                ? Mono.just(Boolean.FALSE)
+                : redis.hasKey("auth:token:" + payload.jti()).onErrorReturn(Boolean.TRUE);
+        return alive.map(ok -> ok
+                ? request.mutate()
+                        .header(Headers.USER_ID, String.valueOf(payload.userId()))
+                        .header(Headers.USER_ROLE, payload.role() == null ? "" : payload.role())
+                        .build()
+                : request);
     }
 
     private Mono<Void> reject(ServerWebExchange exchange, HttpStatus status, ErrorCode errorCode) {

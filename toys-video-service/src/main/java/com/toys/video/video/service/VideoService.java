@@ -109,7 +109,8 @@ public class VideoService {
 
         try {
             eventPublisher.publishUploaded(new VideoUploadedEvent(
-                    video.getId(), objectKey, ownerId, filename));
+                    video.getId(), objectKey, ownerId, filename,
+                    video.getTitle(), video.getDescription()));
         } catch (Exception e) {
             log.error("publish VIDEO_UPLOADED failed, videoId={}, reverting status", video.getId(), e);
             revertToUploaded(video.getId());
@@ -247,6 +248,108 @@ public class VideoService {
         eventPublisher.publishApproved(new VideoApprovedEvent(id, video.getObjectKey()));
     }
 
+    /** 删除投稿:owner 或 ADMIN,任何状态;物理删除记录并清理归属对象。 */
+    public void deleteVideo(Long id, Long requesterId, String requesterRole) {
+        Video video = videoMapper.selectById(id);
+        if (video == null) {
+            throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
+        }
+        if (!video.getOwnerId().equals(requesterId) && !"ADMIN".equals(requesterRole)) {
+            throw BizException.of(ErrorCode.FORBIDDEN);
+        }
+        // 未完成的上传会话:先清掉分片对象
+        if (VideoStatus.UPLOADED.name().equals(video.getStatus()) && video.getUploadId() != null) {
+            deleteChunks(video.getUploadId(), listUploadedPartNumbers(video));
+        }
+        // 原片被其他视频(秒传共享)引用时保留,否则一并删除
+        if (video.getObjectKey() != null && !objectKeySharedByOthers(video)) {
+            removeObject(MinioConfig.BUCKET_VIDEOS, video.getObjectKey());
+        }
+        removePrefix(MinioConfig.BUCKET_HLS, video.getId() + "/");
+        videoMapper.deleteById(id);
+        evictListCache();
+        log.info("video {} deleted by user {}", id, requesterId);
+    }
+
+    /** objectKey 是否被其他视频记录引用:同 md5 已有对象的其他行,或直接同 objectKey 的其他行。 */
+    private boolean objectKeySharedByOthers(Video video) {
+        if (video.getMd5() != null) {
+            Long sameMd5 = videoMapper.selectCount(new LambdaQueryWrapper<Video>()
+                    .eq(Video::getMd5, video.getMd5())
+                    .ne(Video::getId, video.getId())
+                    .isNotNull(Video::getObjectKey));
+            if (sameMd5 != null && sameMd5 > 0) {
+                return true;
+            }
+        }
+        Long sameKey = videoMapper.selectCount(new LambdaQueryWrapper<Video>()
+                .eq(Video::getObjectKey, video.getObjectKey())
+                .ne(Video::getId, video.getId()));
+        return sameKey != null && sameKey > 0;
+    }
+
+    private void removeObject(String bucket, String objectKey) {
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(bucket)
+                    .object(objectKey)
+                    .build());
+        } catch (Exception e) {
+            log.warn("object remove failed, bucket={}, object={}: {}", bucket, objectKey, e.getMessage());
+        }
+    }
+
+    /** 删除 bucket 下某前缀的全部对象(HLS 产物清理)。 */
+    private void removePrefix(String bucket, String prefix) {
+        try {
+            List<io.minio.messages.DeleteObject> objects = new java.util.ArrayList<>();
+            for (io.minio.Result<io.minio.messages.Item> r : minioClient.listObjects(
+                    io.minio.ListObjectsArgs.builder()
+                            .bucket(bucket)
+                            .prefix(prefix)
+                            .recursive(true)
+                            .build())) {
+                objects.add(new io.minio.messages.DeleteObject(r.get().objectName()));
+            }
+            if (objects.isEmpty()) {
+                return;
+            }
+            for (io.minio.Result<io.minio.messages.DeleteError> errResult : minioClient.removeObjects(
+                    io.minio.RemoveObjectsArgs.builder()
+                            .bucket(bucket)
+                            .objects(objects)
+                            .build())) {
+                log.warn("object delete failed: {}", errResult.get().objectName());
+            }
+        } catch (Exception e) {
+            log.warn("prefix cleanup failed, bucket={}, prefix={}: {}", bucket, prefix, e.getMessage());
+        }
+    }
+
+    /** 编辑投稿:仅 owner,任意状态。 */
+    public void editVideo(Long id, Long requesterId, String title, String description) {
+        Video video = videoMapper.selectById(id);
+        if (video == null) {
+            throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
+        }
+        if (!video.getOwnerId().equals(requesterId)) {
+            throw BizException.of(ErrorCode.FORBIDDEN);
+        }
+        if (title == null || title.isBlank() || title.length() > 100) {
+            throw BizException.of(ErrorCode.VIDEO_TITLE_INVALID);
+        }
+        if (description != null && description.length() > 2000) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "简介过长");
+        }
+        videoMapper.update(null, new LambdaUpdateWrapper<Video>()
+                .eq(Video::getId, id)
+                .set(Video::getTitle, title.trim())
+                .set(Video::getDescription, description == null ? "" : description.trim())
+                .set(Video::getUpdatedAt, LocalDateTime.now()));
+        evictListCache();
+        log.info("video {} edited by user {}", id, requesterId);
+    }
+
     public String presignedOriginalUrl(Long videoId, int expirySeconds) {
         Video video = videoMapper.selectById(videoId);
         if (video == null || video.getObjectKey() == null) {
@@ -321,7 +424,8 @@ public class VideoService {
                 v.setMd5(digest);
                 videoMapper.insert(v);
                 eventPublisher.publishUploaded(new VideoUploadedEvent(
-                        v.getId(), v.getObjectKey(), ownerId, safeName));
+                        v.getId(), v.getObjectKey(), ownerId, safeName,
+                        v.getTitle(), v.getDescription()));
                 log.info("instant upload: video {} reuses object of {}", v.getId(), done.getId());
                 return new com.toys.video.video.dto.InitUploadResponse(v.getId(), null, null, List.of(), true);
             }
@@ -436,7 +540,8 @@ public class VideoService {
         video.setUploadId(null);
         videoMapper.updateById(video);
         eventPublisher.publishUploaded(new VideoUploadedEvent(
-                video.getId(), video.getObjectKey(), video.getOwnerId(), video.getOriginalFilename()));
+                video.getId(), video.getObjectKey(), video.getOwnerId(), video.getOriginalFilename(),
+                video.getTitle(), video.getDescription()));
         log.info("video {} chunks merged ({} parts), submitted for moderation", videoId, uploaded.size());
     }
 

@@ -1,13 +1,16 @@
 package com.toys.video.moderation.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.toys.video.api.enums.VideoStatus;
 import com.toys.video.api.feign.VideoInternalClient;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.moderation.entity.ModerationReport;
 import com.toys.video.moderation.mapper.ModerationReportMapper;
+import com.toys.video.moderation.text.SensitiveWordFilter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,31 +28,52 @@ public class ModerationService {
 
     private static final Set<String> AUTO_FAIL_ACTIONS = Set.of("AUTO_FAIL");
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     private final ModerationReportMapper reportMapper;
     private final AutoScreenService autoScreenService;
     private final VideoInternalClient videoInternalClient;
+    private final SensitiveWordFilter sensitiveWordFilter;
 
-    /** 事件触发:机审并推进状态。状态回写失败(2105)视为重复/过期投递,幂等跳过。 */
-    public void moderate(Long videoId, String objectKey) {
+    /** 事件触发:先文本机审(标题/简介),再画面机审并推进状态。状态回写失败(2105)视为重复/过期投递,幂等跳过。 */
+    public void moderate(Long videoId, String objectKey, String title, String description) {
         if (reportMapper.selectCount(new LambdaQueryWrapper<ModerationReport>()
                 .eq(ModerationReport::getVideoId, videoId)) > 0) {
             log.info("moderation report exists for video {}, skip (idempotent)", videoId);
             return;
         }
 
-        JsonNode result = autoScreenService.screen(objectKey);
-        String verdict = result.path("verdict").asText("AUTO_FAIL");
-        JsonNode meta = result.path("meta");
+        // 文本机审先行:标题/简介命中敏感词即硬失败,直接走自动拒绝,跳过画面机审省资源
+        List<String> textHits = sensitiveWordFilter.screen(
+                (title == null ? "" : title) + "\n" + (description == null ? "" : description));
+        boolean textFail = !textHits.isEmpty();
+
+        JsonNode meta = null;
+        String verdict;
+        String reportJson;
+        if (textFail) {
+            verdict = "AUTO_FAIL";
+            reportJson = textReportJson(textHits);
+        } else {
+            JsonNode result = autoScreenService.screen(objectKey);
+            verdict = result.path("verdict").asText("AUTO_FAIL");
+            meta = result.path("meta");
+            reportJson = result.toString();
+        }
 
         ModerationReport report = new ModerationReport();
         report.setVideoId(videoId);
         report.setAutoVerdict(verdict);
-        report.setAutoReport(result.toString());
-        boolean autoReject = AUTO_FAIL_ACTIONS.contains(verdict);
+        report.setAutoReport(reportJson);
+        boolean autoReject = textFail || AUTO_FAIL_ACTIONS.contains(verdict);
         // 硬失败自动拒绝:报告直接终态,不再进人工队列
         report.setDecision(autoReject ? "REJECTED" : "PENDING");
+        String rejectReason = null;
         if (autoReject) {
-            report.setRejectReason("机审自动拒绝:内容不合规或文件异常");
+            rejectReason = textFail
+                    ? "机审未通过:文本包含违规内容(" + String.join("、", textHits) + ")"
+                    : "机审自动拒绝:内容不合规或文件异常";
+            report.setRejectReason(rejectReason);
             report.setDecidedAt(LocalDateTime.now());
         }
         try {
@@ -61,12 +85,24 @@ public class ModerationService {
 
         VideoInternalClient.InternalStatusUpdate update = new VideoInternalClient.InternalStatusUpdate(
                 autoReject ? VideoStatus.REJECTED.name() : VideoStatus.UNDER_REVIEW.name(),
-                longOrNull(meta.path("duration_sec")),
-                intOrNull(meta.path("width")),
-                intOrNull(meta.path("height")),
-                autoReject ? "机审未通过:内容不合规或文件异常" : null);
+                textFail ? null : longOrNull(meta.path("duration_sec")),
+                textFail ? null : intOrNull(meta.path("width")),
+                textFail ? null : intOrNull(meta.path("height")),
+                textFail ? rejectReason
+                        : (autoReject ? "机审未通过:内容不合规或文件异常" : null));
         applyStatus(videoId, update);
         log.info("video {} auto-screened: {} -> {}", videoId, verdict, update.target());
+    }
+
+    /** 文本机审报告 JSON:命中来源与命中词,字段对齐画面机审报告的 verdict。 */
+    private String textReportJson(List<String> hits) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(
+                    Map.of("verdict", "AUTO_FAIL", "source", "text", "hits", hits));
+        } catch (JsonProcessingException e) {
+            log.warn("text report serialize failed", e);
+            return "{\"verdict\":\"AUTO_FAIL\",\"source\":\"text\"}";
+        }
     }
 
     public Map<String, Object> reviewDetail(Long videoId) {

@@ -11,8 +11,11 @@ import com.toys.video.video.dto.VideoCard;
 import com.toys.video.video.dto.VideoDetail;
 import com.toys.video.video.service.PlayCountService;
 import com.toys.video.video.service.VideoService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -86,10 +89,33 @@ public class VideoController {
         return R.ok(videoService.detail(id, UserContext.userId(), UserContext.userRole()));
     }
 
+    /** 播放计数:同客户端(X-Forwarded-For 首段/remoteAddr + 用户)24h 内只计一次。 */
     @PostMapping("/{id}/play")
-    public R<Void> play(@PathVariable Long id) {
-        playCountService.recordPlay(id);
+    public R<Void> play(@PathVariable Long id, HttpServletRequest request) {
+        playCountService.recordPlay(id, PlayCountService.clientKeyOf(
+                request.getHeader("X-Forwarded-For"), request.getRemoteAddr(), UserContext.userId()));
         return R.ok();
+    }
+
+    /** 删除投稿:owner 或 ADMIN,任何状态。 */
+    @DeleteMapping("/{id}")
+    public R<Void> delete(@PathVariable Long id) {
+        videoService.deleteVideo(id, requireUser(), UserContext.userRole());
+        return R.ok();
+    }
+
+    /** 编辑投稿:仅 owner,任意状态。 */
+    @PatchMapping("/{id}")
+    public R<Void> edit(@PathVariable Long id,
+                        @jakarta.validation.Valid @RequestBody EditVideoRequest req) {
+        videoService.editVideo(id, requireUser(), req.title(), req.description());
+        return R.ok();
+    }
+
+    public record EditVideoRequest(
+            @jakarta.validation.constraints.NotBlank(message = "标题不能为空")
+            @jakarta.validation.constraints.Size(max = 100, message = "标题不能超过100字") String title,
+            @jakarta.validation.constraints.Size(max = 2000, message = "简介不能超过2000字") String description) {
     }
 
     @PostMapping("/{id}/retry")

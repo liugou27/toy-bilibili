@@ -23,6 +23,11 @@ public class RateLimitConfig {
         if (userId != null && !userId.isBlank()) {
             return Mono.just("u:" + userId);
         }
+        // 经 Nginx 等反代部署时取真实客户端 IP;直连场景回退 remoteAddress
+        String forwarded = exchange.getRequest().getHeaders().getFirst("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return Mono.just("ip:" + forwarded.split(",")[0].trim());
+        }
         var remote = exchange.getRequest().getRemoteAddress();
         String ip = remote != null && remote.getAddress() != null
                 ? remote.getAddress().getHostAddress()

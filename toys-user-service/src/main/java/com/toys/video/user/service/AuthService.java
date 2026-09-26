@@ -38,6 +38,9 @@ public class AuthService implements ApplicationRunner {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final LoginGuard loginGuard;
+    private final org.springframework.data.redis.core.StringRedisTemplate redis;
+    @org.springframework.beans.factory.annotation.Value("${toys.jwt.ttl-seconds:604800}")
+    private long jwtTtlSeconds;
     private final Map<String, RegisterWindow> registerWindows = new ConcurrentHashMap<>();
 
     public LoginResponse register(RegisterRequest req, String clientIp) {
@@ -51,7 +54,9 @@ public class AuthService implements ApplicationRunner {
         } catch (DuplicateKeyException e) {
             throw BizException.of(ErrorCode.USERNAME_TAKEN);
         }
-        return new LoginResponse(jwtUtil.issue(user.getId(), user.getRole()), toInfo(user));
+        String token = jwtUtil.issue(user.getId(), user.getRole());
+        registerToken(token);
+        return new LoginResponse(token, toInfo(user));
     }
 
     public LoginResponse login(LoginRequest req) {
@@ -63,7 +68,30 @@ public class AuthService implements ApplicationRunner {
             throw BizException.of(ErrorCode.BAD_CREDENTIALS);
         }
         loginGuard.clear(req.username());
-        return new LoginResponse(jwtUtil.issue(user.getId(), user.getRole()), toInfo(user));
+        String token = jwtUtil.issue(user.getId(), user.getRole());
+        registerToken(token);
+        return new LoginResponse(token, toInfo(user));
+    }
+
+    /** 注销:从服务端删除 jti,token 立即失效(黑名单语义的Reverse——白名单)。 */
+    public void logout(String token) {
+        try {
+            String jti = jwtUtil.parse(token).jti();
+            redis.delete("auth:token:" + jti);
+        } catch (Exception e) {
+            // 无效 token 的注销静默成功,不泄露信息
+        }
+    }
+
+    /** 登记签发的 token(jti 白名单,TTL 与 token 剩余寿命一致)。 */
+    private void registerToken(String token) {
+        try {
+            com.toys.video.common.security.JwtUtil.TokenPayload payload = jwtUtil.parse(token);
+            redis.opsForValue().set("auth:token:" + payload.jti(), "1",
+                    java.time.Duration.ofSeconds(jwtTtlSeconds));
+        } catch (Exception e) {
+            log.warn("register token failed: {}", e.getMessage());
+        }
     }
 
     public UserInfo me(Long userId) {

@@ -7,6 +7,8 @@ public record VideoUploadedEvent(
         Long videoId,
         String objectKey,
         Long ownerId,
-        String originalFilename
+        String originalFilename,
+        String title,
+        String description
 ) implements Serializable {
 }

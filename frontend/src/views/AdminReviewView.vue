@@ -16,7 +16,12 @@
       <el-table v-else :data="queue" v-loading="loading">
         <el-table-column label="视频" min-width="260">
           <template #default="{ row }">
-            <div class="v-title">{{ row.title }}</div>
+            <div class="v-title">
+              {{ row.title }}
+              <span class="claim-badge" :class="row.claimedBy ? 'claimed' : 'free'">
+                {{ row.claimedBy ? '已被认领' : '可认领' }}
+              </span>
+            </div>
             <div class="v-meta">{{ row.originalFilename }} · {{ fmtSize(row.sizeBytes) }}</div>
           </template>
         </el-table-column>
@@ -30,8 +35,9 @@
         <el-table-column prop="createdAt" label="提交时间" width="180">
           <template #default="{ row }">{{ fmtTime(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="160">
+        <el-table-column label="操作" width="190">
           <template #default="{ row }">
+            <el-button v-if="!row.claimedBy" size="small" round :loading="claiming" @click="claim(row.videoId)">认领</el-button>
             <el-button type="primary" size="small" round @click="openDetail(row.videoId)">审核</el-button>
           </template>
         </el-table-column>
@@ -84,6 +90,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '../api.js'
+import { auth } from '../auth.js'
 
 const queue = ref([])
 const total = ref(0)
@@ -92,6 +99,7 @@ const dialog = ref(false)
 const detail = ref(null)
 const detailLoading = ref(false)
 const acting = ref(false)
+const claiming = ref(false)
 const rejectDialog = ref(false)
 const rejectReason = ref('')
 const reviewPlayer = ref(null)
@@ -129,10 +137,43 @@ async function openDetail(videoId) {
   detail.value = null
   detailLoading.value = true
   dialog.value = true
+  claimSilently(videoId)
   try {
     detail.value = await http.get(`/admin/moderation/${videoId}`)
   } finally {
     detailLoading.value = false
+  }
+}
+
+async function claim(videoId) {
+  if (claiming.value) return
+  claiming.value = true
+  try {
+    await http.post(`/admin/moderation/${videoId}/claim`)
+    ElMessage.success('已认领')
+    load()
+  } catch {
+    // 失败原因由 http 拦截器统一提示(如已被其他审核员认领)
+  } finally {
+    claiming.value = false
+  }
+}
+
+/** 打开审核详情时静默认领:直接走 fetch,失败(可能已被他人认领)不弹错误,仅提示返回队列。 */
+async function claimSilently(videoId) {
+  try {
+    const resp = await fetch(`/api/admin/moderation/${videoId}/claim`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${auth.token()}` }
+    })
+    const body = await resp.json()
+    if (body.code === 0) {
+      load()
+    } else {
+      ElMessage.warning('该任务可能已被其他审核员认领,请返回队列刷新')
+    }
+  } catch {
+    ElMessage.warning('该任务可能已被其他审核员认领,请返回队列刷新')
   }
 }
 
@@ -216,6 +257,13 @@ onBeforeUnmount(() => pollTimer && clearInterval(pollTimer))
 
 .v-title { font-size: 15px; font-weight: 500; }
 .v-meta { margin-top: 4px; font-size: 12px; color: var(--text-tertiary); }
+
+.claim-badge {
+  margin-left: 8px; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 500; white-space: nowrap; vertical-align: 2px;
+}
+.claim-badge.claimed { background: rgba(120, 120, 128, 0.12); color: var(--text-secondary); }
+.claim-badge.free { background: rgba(48, 209, 88, 0.12); color: var(--success); }
 
 .verdict { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }

@@ -30,6 +30,14 @@ public class AuthController {
         return R.ok(authService.login(req));
     }
 
+    @PostMapping("/logout")
+    public R<Void> logout(@org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (authorization != null && authorization.startsWith("Bearer ")) {
+            authService.logout(authorization.substring(7));
+        }
+        return R.ok();
+    }
+
     /** 优先取网关透传的 X-Forwarded-For 首段,回退到直连地址。 */
     private static String clientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");

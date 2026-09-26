@@ -36,6 +36,8 @@ http.interceptors.response.use(
       router.push({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
     } else if (status === 403) {
       ElMessage.error('无权访问')
+    } else if (status === 429) {
+      ElMessage.error('请求太频繁,请稍后再试')
     } else if (status >= 500) {
       ElMessage.error(body?.message || '服务暂时不可用,请稍后重试')
     } else {

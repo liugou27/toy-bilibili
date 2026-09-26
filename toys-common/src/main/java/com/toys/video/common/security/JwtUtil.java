@@ -33,6 +33,7 @@ public class JwtUtil {
     public String issue(long userId, String role) {
         Instant now = Instant.now();
         return Jwts.builder()
+                .id(java.util.UUID.randomUUID().toString())
                 .subject(String.valueOf(userId))
                 .claim("role", role)
                 .issuedAt(Date.from(now))
@@ -52,9 +53,10 @@ public class JwtUtil {
         }
         Claims claims = Jwts.parser().verifyWith(key).build()
                 .parseSignedClaims(token).getPayload();
-        return new TokenPayload(Long.valueOf(claims.getSubject()), claims.get("role", String.class));
+        return new TokenPayload(Long.valueOf(claims.getSubject()), claims.get("role", String.class), claims.getId());
     }
 
-    public record TokenPayload(Long userId, String role) {
+    /** jti 用于注销黑名单:登出即从服务端删除,token 立即失效。 */
+    public record TokenPayload(Long userId, String role, String jti) {
     }
 }

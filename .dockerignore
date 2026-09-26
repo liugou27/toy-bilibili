@@ -1,0 +1,19 @@
+# Git 与 IDE
+.git
+.idea
+
+# 文档与本地数据
+docs
+data
+*.log
+
+# Maven 产物仅保留 jar,控制构建上下文体积
+**/target
+!**/target/*.jar
+
+# 前端(依赖与构建产物,镜像内自行安装/构建)
+frontend/node_modules
+frontend/dist
+
+# Python 缓存
+**/__pycache__

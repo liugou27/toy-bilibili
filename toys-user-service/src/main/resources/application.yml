@@ -13,13 +13,13 @@ spring:
       - optional:nacos:toys-user-service.yml
   data:
     redis:
-      host: 127.0.0.1
+      host: ${REDIS_HOST:127.0.0.1}
       port: 6379
   cloud:
     nacos:
-      server-addr: 127.0.0.1:8848
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
   datasource:
-    url: jdbc:postgresql://127.0.0.1:5433/toys_video?currentSchema=user_db
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=user_db
     username: postgres
     password: ""
     hikari:

@@ -11,12 +11,12 @@ spring:
       - optional:nacos:toys-media-service.yml
   cloud:
     nacos:
-      server-addr: 127.0.0.1:8848
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
     openfeign:
       circuitbreaker:
         enabled: true
   datasource:
-    url: jdbc:postgresql://127.0.0.1:5433/toys_video?currentSchema=media_db
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=media_db
     username: postgres
     password: ""
     hikari:
@@ -39,11 +39,11 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 rocketmq:
-  name-server: 127.0.0.1:9876
+  name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}
 
 toys:
   minio:
-    endpoint: http://127.0.0.1:9000
+    endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
     access-key: minioadmin
     secret-key: minioadmin
   scripts:

@@ -13,12 +13,12 @@ spring:
     timeout-per-shutdown-phase: 30s
   cloud:
     nacos:
-      server-addr: 127.0.0.1:8848
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
     openfeign:
       circuitbreaker:
         enabled: true
   datasource:
-    url: jdbc:postgresql://127.0.0.1:5433/toys_video?currentSchema=video_db
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=video_db
     username: postgres
     password: ""
     hikari:
@@ -36,7 +36,7 @@ spring:
       max-request-size: 2200MB
   data:
     redis:
-      host: 127.0.0.1
+      host: ${REDIS_HOST:127.0.0.1}
       port: 6379
 
 mybatis-plus:
@@ -44,14 +44,14 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 rocketmq:
-  name-server: 127.0.0.1:9876
+  name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}
   producer:
     group: toys-video-producer
     send-message-timeout: 10000
 
 toys:
   minio:
-    endpoint: http://127.0.0.1:9000
+    endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
     access-key: minioadmin
     secret-key: minioadmin
   upload:

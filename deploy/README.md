@@ -21,8 +21,10 @@
 ## 启动顺序
 
 ```bash
-# 1. 中间件(docker compose:nacos/rocketmq/redis)
-cd deploy && docker compose up -d && cd ..
+# 1. 中间件(docker compose:仅启动中间件,服务在宿主机直跑)
+cd deploy && docker compose up -d nacos rocketmq-namesrv rocketmq-broker redis && cd ..
+# 注意:compose 中 broker 挂载默认指向 broker-docker.conf(容器模式),
+# 宿主机直跑服务需把挂载换回 ./rocketmq/broker.conf(brokerIP1=127.0.0.1),否则服务连不上 broker
 
 # 2. MinIO(官方已无 darwin-arm64 构建,用 Rosetta 转译 amd64 二进制)
 deploy/start-minio.sh &          # 数据目录 ~/toys-minio-data,账号 minioadmin/minioadmin
@@ -47,6 +49,49 @@ cd frontend && npm install && npm run dev
 ```
 
 Maven 用项目级配置 `deploy/maven-settings.xml`(阿里云 HTTPS + 本机代理),绕开全局 settings 里的内网 Nexus。
+
+## 全栈容器化
+
+除 MinIO 外,PostgreSQL、5 个 Java 服务与前端也定义在 `deploy/docker-compose.yml`,一条命令拉起整套系统。
+
+### 构建与启动
+
+```bash
+# 1. 先在宿主机完成编译:容器构建只 COPY 既有 jar,不在镜像内编译
+mvn -s deploy/maven-settings.xml -DskipTests package
+
+# 2. 构建镜像并启动(Java 服务共用 deploy/docker/Dockerfile.service 模板,
+#    以 build-arg 传入 JAR_FILE 与 PORT;前端为 deploy/docker/Dockerfile.frontend 多阶段构建)
+cd deploy && docker compose build && docker compose up -d
+```
+
+启动完成后浏览器访问 **http://localhost:8081**(前端 nginx 容器,80 映射到宿主 8081,反代 compose 网络内的 gateway:8080,同源无跨域)。中间件(nacos/rocketmq/redis)的宿主端口映射沿用原配置。
+
+容器模式各服务的连接目标由环境变量注入(NACOS_ADDR=nacos:8848、DB_HOST=postgres、DB_PORT=5432、REDIS_HOST=redis、ROCKETMQ_ADDR=rocketmq-namesrv:9876、MINIO_ENDPOINT=http://host.docker.internal:9000),application.yml 中占位符默认值仍指向 127.0.0.1,宿主机直跑零改动。
+
+### PostgreSQL(容器)
+
+- postgres:16-alpine,库 `toys_video`,四个 schema 由 `deploy/docker/init-db.sql` 自动创建。
+- 端口不映射到宿主,避免与本机 5433 独立集群冲突,仅 compose 网络内访问。
+- 认证方式 trust,与宿主机开发集群一致(yml 默认空密码可直接连)。
+
+### 两套 broker.conf
+
+| 文件 | brokerIP1 | 适用模式 |
+|---|---|---|
+| `deploy/rocketmq/broker.conf` | 127.0.0.1 | 宿主机直跑服务 |
+| `deploy/rocketmq/broker-docker.conf` | rocketmq-broker | 全栈容器化(compose 默认挂载) |
+
+Broker 把 brokerIP1 作为自身地址上报给客户端:宿主机客户端只能连 127.0.0.1,容器内客户端只能按服务名连,二者互不兼容,故按模式选用。
+
+### MinIO 保持宿主机进程
+
+官方自 2025 年起停止发布 MinIO 容器镜像,arm64 无官方镜像可用,继续以宿主机进程运行(`deploy/start-minio.sh`,9000/9001)。容器内服务与网关经 `host.docker.internal:9000` 访问,compose 中已配置 `extra_hosts: host.docker.internal:host-gateway`。
+
+### 已知限制
+
+- **broker 容器模式下,宿主机直跑服务连不上 broker**:brokerIP1=rocketmq-broker 在宿主机不可解析。混合模式(容器中间件 + 宿主机服务)需把 compose 中 broker 挂载换回 `./rocketmq/broker.conf`。
+- **moderation/media 容器内无法执行机审与转码脚本**:基础镜像 eclipse-temurin:21-jre 仅含 JRE,scripts/ 已只读挂载到 /app/scripts,但脚本运行依赖的 python3 与 ffmpeg 不在镜像内。
 
 ## 内置账号
 

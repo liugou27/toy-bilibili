@@ -36,7 +36,7 @@ services:
     environment:
       - JAVA_OPT_EXT=-Xms512m -Xmx512m -Xmn128m
     volumes:
-      - ./rocketmq/broker.conf:/home/rocketmq/broker.conf:ro
+      - ./rocketmq/broker.conf:/home/rocketmq/broker.conf:ro  # 本地开发模式;全栈容器模式换 broker-docker.conf 并重启 broker
     depends_on:
       - rocketmq-namesrv
     ports:
@@ -53,6 +53,176 @@ services:
     volumes:
       - redis-data:/data
 
+  # 全栈容器化模式新增;宿主机开发模式不启动 postgres(沿用本机 5433 集群)
+  postgres:
+    profiles: ["full"]
+    image: postgres:16-alpine
+    container_name: toys-postgres
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=toys_video
+      # 服务 yml 默认空密码,容器内沿用 trust(与宿主机开发集群一致)
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d toys_video"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  gateway:
+    profiles: ["full"]
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.service
+      args:
+        JAR_FILE: toys-gateway/target/toys-gateway-0.1.0-SNAPSHOT.jar
+        PORT: "8080"
+    container_name: toys-gateway
+    environment:
+      - NACOS_ADDR=nacos:8848
+      - REDIS_HOST=redis
+      - MINIO_ENDPOINT=http://host.docker.internal:9000
+    depends_on:
+      nacos:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  user-service:
+    profiles: ["full"]
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.service
+      args:
+        JAR_FILE: toys-user-service/target/toys-user-service-0.1.0-SNAPSHOT.jar
+        PORT: "8101"
+    container_name: toys-user-service
+    environment:
+      - NACOS_ADDR=nacos:8848
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - ROCKETMQ_ADDR=rocketmq-namesrv:9876
+    depends_on:
+      nacos:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  video-service:
+    profiles: ["full"]
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.service
+      args:
+        JAR_FILE: toys-video-service/target/toys-video-service-0.1.0-SNAPSHOT.jar
+        PORT: "8102"
+    container_name: toys-video-service
+    environment:
+      - NACOS_ADDR=nacos:8848
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - ROCKETMQ_ADDR=rocketmq-namesrv:9876
+      - MINIO_ENDPOINT=http://host.docker.internal:9000
+    depends_on:
+      nacos:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rocketmq-namesrv:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  moderation-service:
+    profiles: ["full"]
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.service
+      args:
+        JAR_FILE: toys-moderation-service/target/toys-moderation-service-0.1.0-SNAPSHOT.jar
+        PORT: "8103"
+        EXTRA_APT: python3 ffmpeg
+    container_name: toys-moderation-service
+    environment:
+      - NACOS_ADDR=nacos:8848
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - ROCKETMQ_ADDR=rocketmq-namesrv:9876
+      - MINIO_ENDPOINT=http://host.docker.internal:9000
+      - TOYS_SCRIPTS_DIR=/app/scripts
+    volumes:
+      - ../scripts:/app/scripts:ro
+    depends_on:
+      nacos:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rocketmq-namesrv:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  media-service:
+    profiles: ["full"]
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.service
+      args:
+        JAR_FILE: toys-media-service/target/toys-media-service-0.1.0-SNAPSHOT.jar
+        PORT: "8104"
+        EXTRA_APT: python3 ffmpeg
+    container_name: toys-media-service
+    environment:
+      - NACOS_ADDR=nacos:8848
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - ROCKETMQ_ADDR=rocketmq-namesrv:9876
+      - MINIO_ENDPOINT=http://host.docker.internal:9000
+      - TOYS_SCRIPTS_DIR=/app/scripts
+    volumes:
+      - ../scripts:/app/scripts:ro
+    depends_on:
+      nacos:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rocketmq-namesrv:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    profiles: ["full"]
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.frontend
+    container_name: toys-frontend
+    ports:
+      - "8081:80"
+    depends_on:
+      - gateway
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 # MinIO 以本机进程运行(Rosetta 转译 darwin-amd64 二进制,官方已停止 arm64 发布):
 #   minio server ~/toys-minio-data --console-address ":9001"
 #   环境变量 MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin
@@ -60,3 +230,4 @@ services:
 
 volumes:
   redis-data:
+  postgres-data:

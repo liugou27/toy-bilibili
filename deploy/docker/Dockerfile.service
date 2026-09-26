@@ -1,0 +1,29 @@
+# Java 微服务通用镜像模板(5 个服务共用)。
+# 构建时通过 build-arg 指定 jar 路径与服务端口,构建上下文为仓库根:
+#   docker build -f deploy/docker/Dockerfile.service \
+#     --build-arg JAR_FILE=toys-user-service/target/toys-user-service-0.1.0-SNAPSHOT.jar \
+#     --build-arg PORT=8101 \
+#     -t toys-user-service .
+# deploy/docker-compose.yml 已为 5 个服务分别传入 JAR_FILE 与 PORT。
+FROM eclipse-temurin:21-jre
+
+ARG JAR_FILE
+ARG PORT
+# 可选附加系统包:moderation/media 需要 python3 与 ffmpeg(机审/转码脚本)
+ARG EXTRA_APT=""
+
+# 基础镜像不带 curl,安装用于 HEALTHCHECK;EXTRA_APT 按服务追加
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ${EXTRA_APT} \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY ${JAR_FILE} /app/app.jar
+
+EXPOSE ${PORT}
+
+ENV PORT=${PORT}
+HEALTHCHECK --interval=15s --timeout=5s --start-period=90s --retries=10 \
+  CMD curl -fsS http://localhost:${PORT}/actuator/health || exit 1
+
+ENTRYPOINT ["java","-jar","/app/app.jar"]

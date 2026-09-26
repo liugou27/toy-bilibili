@@ -11,14 +11,14 @@ spring:
       - optional:nacos:toys-moderation-service.yml
   cloud:
     nacos:
-      server-addr: 127.0.0.1:8848
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
     openfeign:
       circuitbreaker:
         enabled: true
   lifecycle:
     timeout-per-shutdown-phase: 30s
   datasource:
-    url: jdbc:postgresql://127.0.0.1:5433/toys_video?currentSchema=moderation_db
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=moderation_db
     username: postgres
     password: ""
     hikari:
@@ -36,14 +36,14 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 rocketmq:
-  name-server: 127.0.0.1:9876
+  name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}
   consumer:
     # 消费重试 16 次约 4.6h 后进死信;拉取间隔与批次保持默认
     pull-batch-size: 16
 
 toys:
   minio:
-    endpoint: http://127.0.0.1:9000
+    endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
     access-key: minioadmin
     secret-key: minioadmin
   scripts:

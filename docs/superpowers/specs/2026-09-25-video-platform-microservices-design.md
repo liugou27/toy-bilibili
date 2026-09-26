@@ -241,6 +241,14 @@ Java 侧用 ProcessBuilder 调用,捕获 stderr 用于错误诊断;脚本非零�
 4. **阶段四**:toys-media-service 转码 + 播放打通 + 播放量异步计数(Redis 缓冲+定时回写)+ 前端播放页/首页/上传页完整化。验收:端到端全链路。
 5. **阶段五(可选增强)**:Sentinel 限流熔断(网关路由级)、预签名直传、search-service 骨架。
 
+## 15b. 互动与账号能力(第二轮补充)
+
+- 互动:点赞(video_likes 唯一约束幂等、like_count 防负递减)、收藏(video_favorites,我的收藏列表)、播放历史 + 断点续播(play_histories 每用户每视频一行,upsert 上报,详情返回 resumePosition);视频删除级联清理三表。
+- 账号:修改密码(旧密码校验,改密后当前 jti 立即失效强制重登);JWT 注销采用 jti 白名单(登录登记 Redis,登出/改密删除,网关受保护路径校验,Redis 故障降级为纯验签)。
+- 审核增强:标题/简介文本机审(DFA 敏感词,命中即 AUTO_FAIL 自动拒绝并跳过画面机审);审核认领展示。
+- 播放量防刷:同 IP+用户(或登录用户)24h 去重(Redis SETNX)。
+- 网关限流:Redis 令牌桶(auth 10/s、admin 20/s、video 50/s),key 为登录用户或 XFF 首段客户端 IP;429 前端有明确提示。
+
 ## 16. 部署拓扑与跨域策略
 
 本地开发:Vite dev server 代理 `/api`、`/media` 到网关 8080,浏览器始终同源,不存在跨域。

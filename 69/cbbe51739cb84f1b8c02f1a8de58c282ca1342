@@ -1,0 +1,20 @@
+toys-video-service/src/main/java/com/toys/video/video/service/VideoService.java
+  s_17a5063aa38dd4::t_ffdcbd784b0cb0 739-742
+  s_17a5063aa38dd4::t_4b5dcd535b5a6b 20-23,40,57-58,60-61,181,192-227,315-317,702-707,709,714-722,743,748-749
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "69cbbe51739cb84f1b8c02f1a8de58c282ca1342",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+frontend/src/views/HomeView.vue
+  h_b44a35f6a1bc8a 6
+frontend/src/views/WatchView.vue
+  h_b44a35f6a1bc8a 70-89,132-133,140,154-156,420-447,457,801-897
+toys-video-service/src/main/java/com/toys/video/video/controller/VideoController.java
+  h_b44a35f6a1bc8a 90,95-102
+toys-video-service/src/main/java/com/toys/video/video/discovery/recommend/FusionRecommendGateway.java
+  h_b44a35f6a1bc8a 1,8-9,14-26,29-37,40-49,52-246,248-263,265
+toys-video-service/src/main/java/com/toys/video/video/discovery/recommend/RecommendGateway.java
+  h_b44a35f6a1bc8a 7-8,12,14-19
+toys-video-service/src/main/java/com/toys/video/video/discovery/search/TrgmSearchGateway.java
+  h_b44a35f6a1bc8a 1,10,13-17,20,25-47
+toys-video-service/src/main/java/com/toys/video/video/mapper/VideoMapper.java
+  h_b44a35f6a1bc8a 4,7-10,14-71
+toys-video-service/src/main/java/com/toys/video/video/service/VideoService.java
+  h_b44a35f6a1bc8a 75-76,137-139,149-156,166,168-170,173-194,198-205
+toys-video-service/src/main/resources/db/migration/V5__search_trgm.sql
+  h_b44a35f6a1bc8a 1-4
+toys-video-service/src/test/java/com/toys/video/video/discovery/recommend/FusionRecommendGatewayTest.java
+  h_b44a35f6a1bc8a 1-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ace1c373b8136cd0a4f83092769781f284792c25",
+  "prompts": {},
+  "humans": {
+    "h_b44a35f6a1bc8a": {
+      "author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

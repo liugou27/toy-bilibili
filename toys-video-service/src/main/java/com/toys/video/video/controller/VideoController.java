@@ -5,10 +5,12 @@ import com.toys.video.common.api.R;
 import com.toys.video.common.context.UserContext;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
+import com.toys.video.video.dto.CategorySummary;
 import com.toys.video.video.dto.CommentItem;
 import com.toys.video.video.dto.DanmakuItem;
 import com.toys.video.video.dto.InitUploadResponse;
 import com.toys.video.video.dto.UploadResponse;
+import com.toys.video.video.dto.UploaderProfile;
 import com.toys.video.video.dto.VideoCard;
 import com.toys.video.video.dto.VideoDetail;
 import com.toys.video.video.service.CommentService;
@@ -42,13 +44,15 @@ public class VideoController {
     private final CommentService commentService;
     private final DanmakuService danmakuService;
 
-    /** 上传(multipart):file + title + description。小文件一步上传。 */
+    /** 上传(multipart):file + title + description + category/tags(可选)。小文件一步上传。 */
     @PostMapping
     public R<UploadResponse> upload(@RequestParam("file") MultipartFile file,
                                     @RequestParam("title") String title,
-                                    @RequestParam(value = "description", required = false) String description) {
+                                    @RequestParam(value = "description", required = false) String description,
+                                    @RequestParam(value = "category", required = false) String category,
+                                    @RequestParam(value = "tags", required = false) String tags) {
         Long userId = requireUser();
-        return R.ok(videoService.upload(file, title, description, userId));
+        return R.ok(videoService.upload(file, title, description, category, tags, userId));
     }
 
     // ==================== 分片上传(大文件/断点续传/秒传) ====================
@@ -72,7 +76,7 @@ public class VideoController {
     public R<Void> completeUpload(@PathVariable Long videoId,
                                   @RequestBody CompleteUploadRequest req) {
         Long userId = requireUser();
-        videoService.completeUpload(videoId, req.title(), req.description(), userId);
+        videoService.completeUpload(videoId, req.title(), req.description(), req.category(), req.tags(), userId);
         return R.ok();
     }
 
@@ -84,15 +88,24 @@ public class VideoController {
 
     public record CompleteUploadRequest(
             @jakarta.validation.constraints.NotBlank(message = "标题不能为空") String title,
-            String description) {
+            String description,
+            String category,
+            String tags) {
     }
 
-    /** 首页列表:有关键词走搜索;无关键词按登录态走个性化/匿名融合推荐。 */
+    /** 首页列表:带合法分区走分区筛选;否则有关键词走搜索、无关键词按登录态走个性化/匿名融合推荐。 */
     @GetMapping
     public R<PageResult<VideoCard>> list(@RequestParam(defaultValue = "1") long page,
                                          @RequestParam(defaultValue = "12") long size,
-                                         @RequestParam(required = false) String keyword) {
-        return R.ok(videoService.publishedPage(page, Math.min(size, 50), keyword, UserContext.userId()));
+                                         @RequestParam(required = false) String keyword,
+                                         @RequestParam(required = false) String category) {
+        return R.ok(videoService.publishedPage(page, Math.min(size, 50), keyword, UserContext.userId(), category));
+    }
+
+    /** 分区概览:公开,返回全部分区(有序)与各自 PUBLISHED 视频数。 */
+    @GetMapping("/categories")
+    public R<List<CategorySummary>> categories() {
+        return R.ok(videoService.categories());
     }
 
     /** 相关视频:公开,共现为主、热度补齐。 */
@@ -156,14 +169,16 @@ public class VideoController {
     @PatchMapping("/{id}")
     public R<Void> edit(@PathVariable Long id,
                         @jakarta.validation.Valid @RequestBody EditVideoRequest req) {
-        videoService.editVideo(id, requireUser(), req.title(), req.description());
+        videoService.editVideo(id, requireUser(), req.title(), req.description(), req.category(), req.tags());
         return R.ok();
     }
 
     public record EditVideoRequest(
             @jakarta.validation.constraints.NotBlank(message = "标题不能为空")
             @jakarta.validation.constraints.Size(max = 100, message = "标题不能超过100字") String title,
-            @jakarta.validation.constraints.Size(max = 2000, message = "简介不能超过2000字") String description) {
+            @jakarta.validation.constraints.Size(max = 2000, message = "简介不能超过2000字") String description,
+            String category,
+            String tags) {
     }
 
     @PostMapping("/{id}/retry")
@@ -171,6 +186,22 @@ public class VideoController {
         Long userId = requireUser();
         videoService.retryTranscode(id, userId, UserContext.userRole());
         return R.ok();
+    }
+
+    // ==================== UP 主公开主页 ====================
+
+    /** UP 主公开主页:仅统计其 PUBLISHED 视频;用户不存在返回 NOT_FOUND。 */
+    @GetMapping("/uploader/{id}/profile")
+    public R<UploaderProfile> uploaderProfile(@PathVariable Long id) {
+        return R.ok(videoService.uploaderProfile(id));
+    }
+
+    /** UP 主公开视频列表:仅 PUBLISHED,发布时间倒序。 */
+    @GetMapping("/uploader/{id}/videos")
+    public R<PageResult<VideoCard>> uploaderVideos(@PathVariable Long id,
+                                                   @RequestParam(defaultValue = "1") long page,
+                                                   @RequestParam(defaultValue = "20") long size) {
+        return R.ok(videoService.uploaderVideos(id, page, Math.min(size, 50)));
     }
 
     // ==================== 评论 ====================

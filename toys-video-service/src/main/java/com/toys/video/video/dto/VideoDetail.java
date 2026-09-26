@@ -1,6 +1,7 @@
 package com.toys.video.video.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record VideoDetail(
         Long id,
@@ -14,6 +15,10 @@ public record VideoDetail(
         String ownerName,
         String status,
         String note,
+        /** 分区 key,未设置时为 null。 */
+        String category,
+        /** 标签列表,存储为逗号串。 */
+        List<String> tags,
         String originalFilename,
         Long sizeBytes,
         LocalDateTime createdAt,

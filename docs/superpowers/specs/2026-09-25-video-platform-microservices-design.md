@@ -241,6 +241,11 @@ Java 侧用 ProcessBuilder 调用,捕获 stderr 用于错误诊断;脚本非零�
 4. **阶段四**:toys-media-service 转码 + 播放打通 + 播放量异步计数(Redis 缓冲+定时回写)+ 前端播放页/首页/上传页完整化。验收:端到端全链路。
 5. **阶段五(可选增强)**:Sentinel 限流熔断(网关路由级)、预签名直传、search-service 骨架。
 
+## 15b-4. 分区体系与页面扩充(第十轮补充)
+
+- 分区/标签:videos 增 category/tags 字段,VideoMetaPolicy 纯函数校验(分区白名单 8 类、标签 ≤5 个);投稿/编辑携带;列表按分区筛选;categories API 返回分区+计数。
+- 新页面:分区浏览页 /channel/:key、UP 主公开主页 /uploader/:id(profile+投稿分页+总播放统计)、404 页;导航分区下拉;投稿页两列改版(本地视频预览+分区+标签);播放页简介折叠与分区/标签 chips。
+
 ## 15b-3. 搜索与推荐(第八轮补充,多路召回+融合骨架)
 
 - 搜索:pg_trgm 扩展 + GIN 索引,标题 ILIKE/相似度加权排序(播放量、点赞),异常自动降级 LIKE。

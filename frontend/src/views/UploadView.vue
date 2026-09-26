@@ -8,111 +8,146 @@
     <el-card shadow="never">
       <input ref="fileInput" type="file" accept=".mp4,.mkv,.mov,.avi,.flv" :disabled="busy" @change="onFile" class="hidden-input" />
 
-      <template v-if="state === 'idle'">
-        <div
-          v-if="!file"
-          class="dropzone"
-          :class="{ 'is-drag': dragOver }"
-          @click="!busy && fileInput.click()"
-          @dragover.prevent="dragOver = true"
-          @dragleave.prevent="dragOver = false"
-          @drop.prevent="onDrop"
-        >
-          <span class="dz-icon">
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 15V4" /><path d="m6.5 8.5 5.5-5.5 5.5 5.5" /><path d="M4 20h16" />
-            </svg>
-          </span>
-          <p class="dz-title">拖拽视频到此处,或<span class="dz-link">点击选择文件</span></p>
-          <p class="dz-hint">支持 MP4 / MKV / MOV / AVI / FLV,单个文件不超过 2GB</p>
-        </div>
-
-        <div v-else class="file-card">
-          <span class="file-badge">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="5" width="18" height="14" rx="3" /><path d="m10 9.5 5 2.5-5 2.5z" />
-            </svg>
-          </span>
-          <div class="file-meta">
-            <span class="file-name">{{ file.name }}</span>
-            <span class="file-size">{{ fmtSize(file.size) }}</span>
-          </div>
-          <el-tag v-if="resumed" size="small" type="success">已恢复上传</el-tag>
-          <button v-if="!busy" class="file-remove" type="button" @click="removeFile">移除</button>
-        </div>
-
-        <div class="fields">
-          <label class="field-label" for="upload-title">标题</label>
-          <el-input id="upload-title" v-model="form.title" maxlength="100" show-word-limit placeholder="给视频起个标题" :disabled="busy" />
-          <label class="field-label" for="upload-desc">简介</label>
-          <el-input id="upload-desc" v-model="form.description" type="textarea" :rows="4" maxlength="2000" show-word-limit :disabled="busy" />
-        </div>
-
-        <div class="submit-row">
-          <el-button type="primary" size="large" round :disabled="!file || !form.title.trim()" @click="submit">开始上传</el-button>
-        </div>
-      </template>
-
-      <template v-else>
-        <ol class="steps">
-          <li class="step" :class="{ 'is-done': stepIdx() > 0, 'is-active': stepIdx() === 0 }">
-            <span class="step-dot">
-              <svg v-if="stepIdx() > 0" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
-              <template v-else>1</template>
+      <div class="studio">
+        <div class="studio-left">
+          <div
+            v-if="!file"
+            class="dropzone"
+            :class="{ 'is-drag': dragOver }"
+            @click="!busy && fileInput.click()"
+            @dragover.prevent="dragOver = true"
+            @dragleave.prevent="dragOver = false"
+            @drop.prevent="onDrop"
+          >
+            <span class="dz-icon">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 15V4" /><path d="m6.5 8.5 5.5-5.5 5.5 5.5" /><path d="M4 20h16" />
+              </svg>
             </span>
-            <span class="step-label">计算指纹</span>
-          </li>
-          <li class="step-line" :class="{ 'is-filled': stepIdx() > 0 }"></li>
-          <li class="step" :class="{ 'is-done': stepIdx() > 1, 'is-active': stepIdx() === 1 }">
-            <span class="step-dot">
-              <svg v-if="stepIdx() > 1" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
-              <template v-else>2</template>
-            </span>
-            <span class="step-label">分片上传</span>
-          </li>
-          <li class="step-line" :class="{ 'is-filled': stepIdx() > 1 }"></li>
-          <li class="step" :class="{ 'is-active': stepIdx() === 2 }">
-            <span class="step-dot">
-              <span v-if="stepIdx() < 2">3</span>
-            </span>
-            <span class="step-label">合并提交</span>
-          </li>
-        </ol>
-
-        <!-- 计算指纹 -->
-        <div v-if="state === 'hashing'" class="stage">
-          <div class="stage-row">
-            <p class="stage-text">正在计算文件指纹({{ hashPercent }}%),用于秒传与断点续传…</p>
+            <p class="dz-title">拖拽视频到此处,或<span class="dz-link">点击选择文件</span></p>
+            <p class="dz-hint">支持 MP4 / MKV / MOV / AVI / FLV,单个文件不超过 2GB</p>
           </div>
-          <el-progress :percentage="hashPercent" :stroke-width="10" :show-text="false" />
+
+          <template v-else>
+            <div class="preview-wrap">
+              <video v-if="previewUrl" class="preview-video" :src="previewUrl" controls preload="metadata"></video>
+            </div>
+            <div class="file-card">
+              <span class="file-badge">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="5" width="18" height="14" rx="3" /><path d="m10 9.5 5 2.5-5 2.5z" />
+                </svg>
+              </span>
+              <div class="file-meta">
+                <span class="file-name">{{ file.name }}</span>
+                <span class="file-size">{{ fmtSize(file.size) }}</span>
+              </div>
+              <el-tag v-if="resumed" size="small" type="success">已恢复上传</el-tag>
+              <button v-if="!busy" class="file-remove" type="button" @click="removeFile">移除</button>
+            </div>
+          </template>
+
+          <template v-if="state !== 'idle'">
+            <ol class="steps">
+              <li class="step" :class="{ 'is-done': stepIdx() > 0, 'is-active': stepIdx() === 0 }">
+                <span class="step-dot">
+                  <svg v-if="stepIdx() > 0" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
+                  <template v-else>1</template>
+                </span>
+                <span class="step-label">计算指纹</span>
+              </li>
+              <li class="step-line" :class="{ 'is-filled': stepIdx() > 0 }"></li>
+              <li class="step" :class="{ 'is-done': stepIdx() > 1, 'is-active': stepIdx() === 1 }">
+                <span class="step-dot">
+                  <svg v-if="stepIdx() > 1" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
+                  <template v-else>2</template>
+                </span>
+                <span class="step-label">分片上传</span>
+              </li>
+              <li class="step-line" :class="{ 'is-filled': stepIdx() > 1 }"></li>
+              <li class="step" :class="{ 'is-active': stepIdx() === 2 }">
+                <span class="step-dot">
+                  <span v-if="stepIdx() < 2">3</span>
+                </span>
+                <span class="step-label">合并提交</span>
+              </li>
+            </ol>
+
+            <!-- 计算指纹 -->
+            <div v-if="state === 'hashing'" class="stage">
+              <div class="stage-row">
+                <p class="stage-text">正在计算文件指纹({{ hashPercent }}%),用于秒传与断点续传…</p>
+              </div>
+              <el-progress :percentage="hashPercent" :stroke-width="10" :show-text="false" />
+            </div>
+
+            <!-- 分片上传 -->
+            <div v-if="state === 'uploading'" class="stage">
+              <div class="stage-row">
+                <p class="stage-text">分片上传中 {{ uploadPercent }}%(已完成 {{ doneParts }}/{{ totalParts }} 片)</p>
+              </div>
+              <el-progress :percentage="uploadPercent" :stroke-width="10" :show-text="false" />
+              <div class="stage-actions">
+                <el-button round @click="cancel">暂停</el-button>
+                <span class="stage-hint">暂停后,重新选择同一文件即可续传</span>
+              </div>
+            </div>
+
+            <!-- 提交审核 -->
+            <div v-if="state === 'merging'" class="stage">
+              <div class="stage-row">
+                <p class="stage-text">分片合并中,完成后自动进入审核…</p>
+              </div>
+              <el-progress :percentage="100" status="warning" :stroke-width="10" :indeterminate="true" :duration="2" :show-text="false" />
+            </div>
+          </template>
         </div>
 
-        <!-- 分片上传 -->
-        <div v-if="state === 'uploading'" class="stage">
-          <div class="stage-row">
-            <p class="stage-text">分片上传中 {{ uploadPercent }}%(已完成 {{ doneParts }}/{{ totalParts }} 片)</p>
-          </div>
-          <el-progress :percentage="uploadPercent" :stroke-width="10" :show-text="false" />
-          <div class="stage-actions">
-            <el-button round @click="cancel">暂停</el-button>
-            <span class="stage-hint">暂停后,重新选择同一文件即可续传</span>
-          </div>
-        </div>
+        <div class="studio-right">
+          <div class="form-section">
+            <h2 class="section-title">基础信息</h2>
+            <div class="fields">
+              <label class="field-label" for="upload-title">标题</label>
+              <el-input id="upload-title" v-model="form.title" maxlength="100" show-word-limit placeholder="给视频起个标题" :disabled="busy" />
 
-        <!-- 提交审核 -->
-        <div v-if="state === 'merging'" class="stage">
-          <div class="stage-row">
-            <p class="stage-text">分片合并中,完成后自动进入审核…</p>
+              <label class="field-label" for="upload-category">分区<span class="req">*</span></label>
+              <el-select id="upload-category" v-model="form.category" class="category-select" placeholder="选择投稿分区" :disabled="busy">
+                <el-option v-for="c in categories" :key="c.key" :label="c.name" :value="c.key" />
+              </el-select>
+
+              <label class="field-label" for="upload-tags">标签</label>
+              <el-input
+                id="upload-tags"
+                v-model="tagInput"
+                maxlength="16"
+                placeholder="输入标签后回车添加,最多 5 个"
+                :disabled="busy"
+                @keydown.enter="onTagEnter"
+              />
+              <div v-if="form.tags.length" class="tag-list">
+                <el-tag v-for="(t, i) in form.tags" :key="t" round closable @close="removeTag(i)">{{ t }}</el-tag>
+              </div>
+            </div>
           </div>
-          <el-progress :percentage="100" status="warning" :stroke-width="10" :indeterminate="true" :duration="2" :show-text="false" />
+
+          <div class="form-section">
+            <h2 class="section-title">简介</h2>
+            <div class="fields">
+              <el-input id="upload-desc" v-model="form.description" type="textarea" :rows="4" maxlength="2000" show-word-limit :disabled="busy" />
+            </div>
+          </div>
+
+          <div class="submit-row">
+            <el-button type="primary" size="large" round :disabled="busy || !file || !form.title.trim()" @click="submit">开始上传</el-button>
+          </div>
         </div>
-      </template>
+      </div>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
@@ -121,7 +156,8 @@ import http from '../api.js'
 const router = useRouter()
 const file = ref(null)
 const fileInput = ref(null)
-const form = reactive({ title: '', description: '' })
+const previewUrl = ref('')
+const form = reactive({ title: '', description: '', category: '', tags: [] })
 const state = ref('idle') // idle | hashing | uploading | merging
 const hashPercent = ref(0)
 const uploadPercent = ref(0)
@@ -137,6 +173,66 @@ let abortControllers = []
 const MAX_SIZE = 2 * 1024 * 1024 * 1024
 const CONCURRENCY = 3
 
+/** 分区列表;接口失败或为空时回退内置分区(直连 axios,不触发全局错误提示) */
+const categories = ref([])
+const CATEGORY_FALLBACK = [
+  { key: 'donghua', name: '动画' },
+  { key: 'youxi', name: '游戏' },
+  { key: 'keji', name: '科技' },
+  { key: 'shenghuo', name: '生活' },
+  { key: 'yinyue', name: '音乐' },
+  { key: 'yingshi', name: '影视' },
+  { key: 'zhishi', name: '知识' },
+  { key: 'meishi', name: '美食' }
+]
+
+async function loadCategories() {
+  let list = []
+  try {
+    const resp = await axios.get('/api/videos/categories')
+    const body = resp?.data
+    list = Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : []
+  } catch {
+    list = []
+  }
+  list = list.filter((c) => c && c.key != null && c.name != null)
+  categories.value = list.length ? list : CATEGORY_FALLBACK
+}
+onMounted(loadCategories)
+
+/** 标签:回车添加,最多 5 个、单个 ≤16 字、去重 */
+const tagInput = ref('')
+
+function onTagEnter(e) {
+  if (e.isComposing || e.keyCode === 229) return
+  e.preventDefault()
+  addTag()
+}
+
+function addTag() {
+  const t = tagInput.value.trim()
+  if (!t) return
+  if (form.tags.length >= 5) {
+    ElMessage.warning('最多添加 5 个标签')
+    return
+  }
+  if (t.length > 16) {
+    ElMessage.warning('单个标签不超过 16 个字')
+    return
+  }
+  if (form.tags.includes(t)) {
+    ElMessage.warning(`标签「${t}」已存在`)
+    tagInput.value = ''
+    return
+  }
+  form.tags.push(t)
+  tagInput.value = ''
+}
+
+function removeTag(i) {
+  form.tags.splice(i, 1)
+}
+
 function fmtSize(b) {
   return b > 1024 * 1024 * 1024 ? `${(b / 1024 / 1024 / 1024).toFixed(2)} GB` : `${(b / 1024 / 1024).toFixed(1)} MB`
 }
@@ -149,7 +245,9 @@ function onFile(e) {
     e.target.value = ''
     return
   }
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   file.value = f
+  previewUrl.value = URL.createObjectURL(f)
   md5Cache = ''
 }
 
@@ -177,6 +275,10 @@ function computeMd5(f) {
 }
 
 async function submit() {
+  if (!form.category) {
+    ElMessage.warning('请选择投稿分区')
+    return
+  }
   abortFlag = false
   busy.value = true
   try {
@@ -268,7 +370,9 @@ async function submit() {
     state.value = 'merging'
     await http.post(`/videos/upload/${videoId}/complete`, {
       title: form.title.trim(),
-      description: form.description.trim()
+      description: form.description.trim(),
+      category: form.category,
+      tags: form.tags.join(',')
     })
     ElMessage.success('投稿成功,进入审核流程')
     router.push('/my')
@@ -308,6 +412,10 @@ function onDrop(e) {
 function removeFile() {
   file.value = null
   md5Cache = ''
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = ''
+  }
   if (fileInput.value) fileInput.value.value = ''
 }
 
@@ -315,16 +423,33 @@ function removeFile() {
 function stepIdx() {
   return { hashing: 0, uploading: 1, merging: 2 }[state.value] ?? -1
 }
+
+onBeforeUnmount(() => {
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+})
 </script>
 
 <style scoped>
-.upload { max-width: 680px; margin: 24px auto 56px; }
+.upload { max-width: 1180px; margin: 24px auto 56px; }
 
 .page-head { margin-bottom: 24px; }
 .page-head h1 { margin: 0 0 10px; font-size: clamp(32px, 5vw, 40px); line-height: 1.1; }
 .page-head .sub { margin: 0; font-size: 17px; color: var(--text-secondary); }
 
 .hidden-input { display: none; }
+
+.studio {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 28px;
+  align-items: start;
+}
+
+/* 左列:本地预览 + 上传进度 */
+.preview-wrap { border-radius: 14px; overflow: hidden; background: #000; }
+.preview-video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+
+.studio-left .file-card { margin-top: 14px; }
 
 .dropzone {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -367,13 +492,7 @@ function stepIdx() {
 }
 .file-remove:hover { background: rgba(0, 0, 0, 0.05); color: var(--text); }
 
-.fields { display: flex; flex-direction: column; gap: 10px; margin: 24px 0; }
-.field-label { font-size: 14px; font-weight: 600; color: var(--text); }
-.field-label:not(:first-child) { margin-top: 8px; }
-
-.submit-row { display: flex; align-items: center; }
-
-.steps { display: flex; align-items: center; list-style: none; margin: 4px 0 28px; padding: 0; }
+.steps { display: flex; align-items: center; list-style: none; margin: 28px 0 20px; padding: 0; }
 .step { flex: none; display: flex; align-items: center; gap: 10px; }
 .step-dot {
   width: 28px; height: 28px; border-radius: 50%;
@@ -394,4 +513,22 @@ function stepIdx() {
 .stage-text { flex: 1; margin: 0; font-size: 14px; color: var(--text-secondary); }
 .stage-actions { display: flex; align-items: center; gap: 14px; margin-top: 20px; }
 .stage-hint { font-size: 13px; color: var(--text-tertiary); }
+
+/* 右列:表单 */
+.studio-right { min-width: 0; }
+.section-title { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
+.form-section { padding-bottom: 20px; }
+.form-section + .form-section { margin-top: 20px; border-top: 1px solid var(--hairline); padding-top: 20px; }
+.fields { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.field-label { font-size: 14px; font-weight: 600; color: var(--text); }
+.field-label:not(:first-child) { margin-top: 8px; }
+.req { margin-left: 2px; color: var(--danger); }
+.category-select { width: 100%; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.submit-row { display: flex; align-items: center; margin-top: 24px; }
+
+@media (max-width: 960px) {
+  .studio { grid-template-columns: 1fr; }
+}
 </style>

@@ -8,6 +8,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
+import java.util.Map;
 
 @Mapper
 public interface VideoMapper extends BaseMapper<Video> {
@@ -57,6 +58,23 @@ public interface VideoMapper extends BaseMapper<Video> {
             LIMIT #{limit}
             """)
     List<Long> selectGlobalCooccurVideoIds(@Param("limit") int limit);
+
+    /** 各分区 PUBLISHED 视频数(分区入口计数)。 */
+    @Select("""
+            SELECT category, count(*) AS cnt
+            FROM videos
+            WHERE status = 'PUBLISHED' AND category IS NOT NULL
+            GROUP BY category
+            """)
+    List<Map<String, Object>> countPublishedByCategory();
+
+    /** UP 主 PUBLISHED 视频数与总播放量(公开主页统计)。 */
+    @Select("""
+            SELECT count(*) AS video_count, COALESCE(sum(play_count), 0) AS total_play_count
+            FROM videos
+            WHERE owner_id = #{ownerId} AND status = 'PUBLISHED'
+            """)
+    Map<String, Object> selectPublishedStats(@Param("ownerId") Long ownerId);
 
     /** UP 偏好:用户播放历史中最常看的 UP 主 TOP3。 */
     @Select("""

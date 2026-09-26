@@ -12,10 +12,13 @@ import com.toys.video.common.api.PageResult;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.video.config.MinioConfig;
+import com.toys.video.video.discovery.Categorys;
 import com.toys.video.video.discovery.recommend.RecommendGateway;
 import com.toys.video.video.discovery.search.SearchGateway;
+import com.toys.video.video.dto.CategorySummary;
 import com.toys.video.video.dto.VideoCard;
 import com.toys.video.video.dto.VideoDetail;
+import com.toys.video.video.dto.UploaderProfile;
 import com.toys.video.video.entity.Video;
 import com.toys.video.video.entity.VideoFavorite;
 import com.toys.video.video.entity.VideoHistory;
@@ -79,7 +82,7 @@ public class VideoService {
     private String allowedExts;
 
     public com.toys.video.video.dto.UploadResponse upload(MultipartFile file, String title, String description,
-                                                          Long ownerId) {
+                                                          String category, String tags, Long ownerId) {
         if (file == null || file.isEmpty()) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "文件不能为空");
         }
@@ -89,6 +92,8 @@ public class VideoService {
         if (description != null && description.length() > 2000) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "简介过长");
         }
+        String normalizedCategory = VideoMetaPolicy.normalizeCategory(category);
+        String normalizedTags = VideoMetaPolicy.normalizeTags(tags);
         String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
         String ext = extOf(filename);
         if (!allowedExtsAllowed(ext)) {
@@ -99,6 +104,8 @@ public class VideoService {
         video.setOwnerId(ownerId);
         video.setTitle(title.trim());
         video.setDescription(description == null ? "" : description.trim());
+        video.setCategory(normalizedCategory);
+        video.setTags(normalizedTags);
         video.setStatus(VideoStatus.UPLOADED.name());
         videoMapper.insert(video);
 
@@ -134,9 +141,13 @@ public class VideoService {
         return new com.toys.video.video.dto.UploadResponse(video.getId(), video.getStatus());
     }
 
-    /** 首页列表:cache-aside,60s TTL;关键词搜索/登录个性化/匿名融合分流,状态变更/新投稿时整组失效。 */
-    public PageResult<VideoCard> publishedPage(long page, long size, String keyword, Long userId) {
-        String key = listCacheKey(page, size, keyword, userId);
+    /**
+     * 首页列表:cache-aside,60s TTL;关键词搜索/登录个性化/匿名融合分流,状态变更/新投稿时整组失效。
+     * 带合法 category 时改走分区专用查询(按 category + PUBLISHED 分页),缓存 key 同样按 category 区分。
+     */
+    public PageResult<VideoCard> publishedPage(long page, long size, String keyword, Long userId, String category) {
+        String cat = VideoMetaPolicy.normalizeCategory(category);
+        String key = listCacheKey(page, size, keyword, userId, cat);
         try {
             String cached = redis.opsForValue().get(key);
             if (cached != null) {
@@ -146,15 +157,20 @@ public class VideoService {
         } catch (Exception e) {
             log.warn("list cache read failed, fall back to db: {}", e.getMessage());
         }
-        IPage<Video> p;
-        if (keyword != null && !keyword.isBlank()) {
-            p = searchGateway.searchPublished(keyword, page, size);
-        } else if (userId != null) {
-            p = recommendGateway.recommendForUser(userId, page, size);
+        PageResult<VideoCard> result;
+        if (cat != null) {
+            result = categoryPage(cat, page, size);
         } else {
-            p = recommendGateway.recommend(page, size);
+            IPage<Video> p;
+            if (keyword != null && !keyword.isBlank()) {
+                p = searchGateway.searchPublished(keyword, page, size);
+            } else if (userId != null) {
+                p = recommendGateway.recommendForUser(userId, page, size);
+            } else {
+                p = recommendGateway.recommend(page, size);
+            }
+            result = toCards(p);
         }
-        PageResult<VideoCard> result = toCards(p);
         try {
             redis.opsForValue().set(key, objectMapper.writeValueAsString(result), LIST_CACHE_TTL);
         } catch (Exception e) {
@@ -163,11 +179,22 @@ public class VideoService {
         return result;
     }
 
-    private String listCacheKey(long page, long size, String keyword, Long userId) {
+    /** 分区筛选页:PUBLISHED + 指定分区,发布时间倒序;不接入融合推荐。 */
+    public PageResult<VideoCard> categoryPage(String category, long page, long size) {
+        IPage<Video> p = videoMapper.selectPage(new Page<>(page, size),
+                new LambdaQueryWrapper<Video>()
+                        .eq(Video::getStatus, VideoStatus.PUBLISHED.name())
+                        .eq(Video::getCategory, category)
+                        .orderByDesc(Video::getPublishedAt));
+        return toCards(p);
+    }
+
+    private String listCacheKey(long page, long size, String keyword, Long userId, String category) {
         String kw = keyword == null ? "" : keyword.trim().toLowerCase(java.util.Locale.ROOT);
         // 融合推荐结果因人而异:匿名与登录用户、不同登录用户分别缓存
         String user = userId == null ? "anon" : "u" + userId;
-        return LIST_CACHE_PREFIX + page + ":" + size + ":" + Integer.toHexString(kw.hashCode()) + ":" + user;
+        return LIST_CACHE_PREFIX + page + ":" + size + ":" + Integer.toHexString(kw.hashCode()) + ":" + user
+                + ":" + (category == null ? "" : category);
     }
 
     /** 相关视频:共现为主、热度补齐;cache-aside,300s TTL。 */
@@ -189,6 +216,55 @@ public class VideoService {
             log.warn("related cache write failed: {}", e.getMessage());
         }
         return result;
+    }
+
+    /** 分区概览:全部分区(有序)及各自 PUBLISHED 视频数,一条 group by 统计。 */
+    public List<CategorySummary> categories() {
+        Map<String, Long> counts = videoMapper.countPublishedByCategory().stream()
+                .collect(Collectors.toMap(
+                        row -> String.valueOf(row.get("category")),
+                        row -> ((Number) row.get("cnt")).longValue(),
+                        (a, b) -> a));
+        return Categorys.all().stream()
+                .map(c -> new CategorySummary(c.key(), c.name(), counts.getOrDefault(c.key(), 0L)))
+                .toList();
+    }
+
+    // ==================== UP 主公开主页 ====================
+
+    /** UP 主公开主页:展示名/头像来自 user-service,仅统计其 PUBLISHED 视频;用户不存在返回 NOT_FOUND。 */
+    public UploaderProfile uploaderProfile(Long uploaderId) {
+        UserInternalClient.UserBrief brief = fetchBrief(uploaderId);
+        String name = brief.nickname() != null && !brief.nickname().isBlank()
+                ? brief.nickname() : brief.username();
+        if (name == null || name.isBlank()) {
+            name = "用户" + uploaderId;
+        }
+        Map<String, Object> stats = videoMapper.selectPublishedStats(uploaderId);
+        long videoCount = stats == null || stats.get("video_count") == null
+                ? 0 : ((Number) stats.get("video_count")).longValue();
+        long totalPlayCount = stats == null || stats.get("total_play_count") == null
+                ? 0 : ((Number) stats.get("total_play_count")).longValue();
+        return new UploaderProfile(uploaderId, name, brief.avatar(), videoCount, totalPlayCount);
+    }
+
+    /** UP 主公开视频列表:仅 PUBLISHED,发布时间倒序。 */
+    public PageResult<VideoCard> uploaderVideos(Long uploaderId, long page, long size) {
+        IPage<Video> p = videoMapper.selectPage(new Page<>(page, size),
+                new LambdaQueryWrapper<Video>()
+                        .eq(Video::getOwnerId, uploaderId)
+                        .eq(Video::getStatus, VideoStatus.PUBLISHED.name())
+                        .orderByDesc(Video::getPublishedAt));
+        return toCards(p);
+    }
+
+    /** 单个用户展示信息:batch 空回退(用户不存在)→ NOT_FOUND。 */
+    private UserInternalClient.UserBrief fetchBrief(Long userId) {
+        List<UserInternalClient.UserBrief> briefs = userInternalClient.batch(List.of(userId)).data();
+        if (briefs == null || briefs.isEmpty()) {
+            throw BizException.of(ErrorCode.NOT_FOUND);
+        }
+        return briefs.get(0);
     }
 
     /** 列表/相关视频缓存整组失效:任何会影响首页可见内容的写入后调用。 */
@@ -260,8 +336,8 @@ public class VideoService {
         PageResult<VideoCard> cards = toCards(ordered, p.getTotal(), p.getCurrent(), p.getSize());
         List<VideoCard> withPosition = cards.list().stream()
                 .map(c -> new VideoCard(c.id(), c.title(), c.poster(), c.durationSec(), c.playCount(),
-                        c.ownerId(), c.ownerName(), c.status(), c.note(), c.publishedAt(),
-                        positions.get(c.id())))
+                        c.ownerId(), c.ownerName(), c.status(), c.note(), c.category(), c.tags(),
+                        c.publishedAt(), positions.get(c.id())))
                 .toList();
         return new PageResult<>(withPosition, cards.total(), cards.page(), cards.size());
     }
@@ -428,8 +504,9 @@ public class VideoService {
         }
     }
 
-    /** 编辑投稿:仅 owner,任意状态。 */
-    public void editVideo(Long id, Long requesterId, String title, String description) {
+    /** 编辑投稿:仅 owner,任意状态;category/tags 未传时清空(表单整体提交语义)。 */
+    public void editVideo(Long id, Long requesterId, String title, String description,
+                          String category, String tags) {
         Video video = videoMapper.selectById(id);
         if (video == null) {
             throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
@@ -443,10 +520,14 @@ public class VideoService {
         if (description != null && description.length() > 2000) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "简介过长");
         }
+        String normalizedCategory = VideoMetaPolicy.normalizeCategory(category);
+        String normalizedTags = VideoMetaPolicy.normalizeTags(tags);
         videoMapper.update(null, new LambdaUpdateWrapper<Video>()
                 .eq(Video::getId, id)
                 .set(Video::getTitle, title.trim())
                 .set(Video::getDescription, description == null ? "" : description.trim())
+                .set(Video::getCategory, normalizedCategory)
+                .set(Video::getTags, normalizedTags)
                 .set(Video::getUpdatedAt, LocalDateTime.now()));
         evictListCache();
         log.info("video {} edited by user {}", id, requesterId);
@@ -588,7 +669,8 @@ public class VideoService {
     }
 
     /** 全部分片上传完成后合并并提交审核。 */
-    public void completeUpload(Long videoId, String title, String description, Long ownerId) {
+    public void completeUpload(Long videoId, String title, String description,
+                               String category, String tags, Long ownerId) {
         Video video = requireOwnedUpload(videoId, ownerId);
         // 并发兜底:原子确认仍持有上传会话,防止两个并发 complete 同时走到合并
         int claimed = videoMapper.update(null, new LambdaUpdateWrapper<Video>()
@@ -606,6 +688,8 @@ public class VideoService {
         if (description != null && description.length() > 2000) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "简介过长");
         }
+        String normalizedCategory = VideoMetaPolicy.normalizeCategory(category);
+        String normalizedTags = VideoMetaPolicy.normalizeTags(tags);
         long partSize = video.getPartSize() != null ? video.getPartSize() : UploadPolicy.MIN_PART_SIZE;
         long size = video.getSizeBytes() != null ? video.getSizeBytes() : 0;
         int expected = size > 0 ? (int) Math.ceil((double) size / partSize) : 1;
@@ -638,6 +722,8 @@ public class VideoService {
 
         video.setTitle(title.trim());
         video.setDescription(description == null ? "" : description.trim());
+        video.setCategory(normalizedCategory);
+        video.setTags(normalizedTags);
         video.setStatus(VideoStatus.AUTO_SCREENING.name());
         video.setUploadId(null);
         videoMapper.updateById(video);
@@ -763,7 +849,7 @@ public class VideoService {
         List<VideoCard> cards = videos.stream()
                 .map(v -> new VideoCard(v.getId(), v.getTitle(), posterOf(v), v.getDurationSec(),
                         v.getPlayCount(), v.getOwnerId(), names.get(v.getOwnerId()),
-                        v.getStatus(), v.getNote(), v.getPublishedAt()))
+                        v.getStatus(), v.getNote(), v.getCategory(), v.getTags(), v.getPublishedAt()))
                 .toList();
         return new PageResult<>(cards, total, page, size);
     }
@@ -801,7 +887,8 @@ public class VideoService {
         return new VideoDetail(v.getId(), v.getTitle(), v.getDescription(), posterOf(v),
                 published ? "/media/hls/" + v.getId() + "/master.m3u8" : null,
                 v.getDurationSec(), v.getPlayCount(), v.getOwnerId(), ownerName,
-                v.getStatus(), v.getNote(), v.getOriginalFilename(), v.getSizeBytes(),
+                v.getStatus(), v.getNote(), v.getCategory(), VideoMetaPolicy.parseTags(v.getTags()),
+                v.getOriginalFilename(), v.getSizeBytes(),
                 v.getCreatedAt(), v.getPublishedAt(),
                 liked, v.getLikeCount(), favorited, resumePosition);
     }

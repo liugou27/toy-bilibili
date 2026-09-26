@@ -37,6 +37,12 @@ public class Video {
 
     private String format;
 
+    /** 分区 key(@see com.toys.video.video.discovery.Categorys),未设置时为 null。 */
+    private String category;
+
+    /** 标签,逗号分隔,最多 5 个。 */
+    private String tags;
+
     private Long playCount;
 
     private long likeCount;

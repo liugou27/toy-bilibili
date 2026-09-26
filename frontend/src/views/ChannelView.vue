@@ -1,17 +1,17 @@
 <template>
-  <div class="home">
-    <section class="hero reveal" v-reveal>
-      <p v-if="query.keyword" class="hero-eyebrow">“{{ query.keyword }}” 的搜索结果</p>
-      <h1 class="hero-title">每一个瞬间,都值得被看见</h1>
-      <p class="hero-subtitle">{{ query.keyword ? '随手记录,随时观看。来自社区创作者的每个精彩视频,都在这里。' : '为你推荐来自社区创作者的每个精彩视频,随手记录,随时观看。' }}</p>
-    </section>
+  <div class="channel">
+    <header class="channel-head">
+      <h1 class="channel-title">{{ currentName }}</h1>
+      <p class="channel-sub" v-if="currentCategory">{{ fmtCount(currentCategory.count) }} 个视频</p>
+    </header>
 
-    <nav v-if="channels.length" class="channel-chips" aria-label="分区快捷入口">
+    <nav v-if="channels.length" class="chips" aria-label="分区切换">
       <button
         v-for="c in channels"
         :key="c.key"
-        class="channel-chip"
-        @click="$router.push(`/channel/${c.key}`)"
+        class="chip"
+        :class="{ 'is-active': c.key === key }"
+        @click="switchChannel(c.key)"
       >
         {{ c.name }}
       </button>
@@ -26,9 +26,9 @@
     </div>
 
     <div v-else-if="!videos.length" class="empty">
-      <p class="empty-title">{{ query.keyword ? '没有找到相关视频' : '这里还很安静' }}</p>
-      <p class="empty-sub">{{ query.keyword ? '换个关键词试试,或成为第一个分享它的人。' : '第一个视频,就从你的投稿开始。' }}</p>
-      <el-button type="primary" size="large" @click="$router.push('/upload')">立即投稿</el-button>
+      <p class="empty-title">这个分区还没有视频</p>
+      <p class="empty-sub">换个分区逛逛,或者投下这里的第一稿。</p>
+      <el-button type="primary" size="large" @click="$router.push('/')">去首页看看</el-button>
     </div>
 
     <div v-else class="grid">
@@ -67,32 +67,37 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import http from '../api.js'
 
 const route = useRoute()
+const router = useRouter()
+
+const key = computed(() => String(route.params.key || ''))
+
+const channels = ref([])
 const videos = ref([])
 const total = ref(0)
 const loading = ref(true)
-const query = reactive({ page: 1, size: 12, keyword: route.query.q || '' })
+const query = reactive({ page: 1, size: 12 })
 
-// 分区快捷入口:接口失败时整行隐藏
-const channels = ref([])
+const currentCategory = computed(() => channels.value.find((c) => c.key === key.value) || null)
+const currentName = computed(() => currentCategory.value?.name || key.value || '分区')
 
-onMounted(async () => {
+async function loadCategories() {
   try {
     const list = await http.get('/videos/categories')
     channels.value = [...(list || [])].sort((a, b) => (b.count || 0) - (a.count || 0))
   } catch {
     channels.value = []
   }
-})
+}
 
 async function load() {
   loading.value = true
   try {
-    const data = await http.get('/videos', { params: query })
+    const data = await http.get('/videos', { params: { category: key.value, page: query.page, size: query.size } })
     videos.value = data.list
     total.value = data.total
   } finally {
@@ -100,18 +105,41 @@ async function load() {
   }
 }
 
+function switchChannel(k) {
+  if (k === key.value) return
+  router.push(`/channel/${k}`)
+}
+
 function onPage(p) {
   query.page = p
   load()
+  scrollTop()
 }
 
-watch(() => route.query.q, (q) => {
-  query.keyword = q || ''
+function scrollTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+// 分区切换(路由复用同一组件):重置页码并重载
+watch(key, () => {
   query.page = 1
+  load()
+  scrollTop()
+})
+
+watch(currentName, (name) => {
+  document.title = name ? `${name} · toys-video` : 'toys-video'
+})
+
+onMounted(() => {
+  document.title = `${currentName.value} · toys-video`
+  loadCategories()
   load()
 })
 
-onMounted(load)
+onBeforeUnmount(() => {
+  document.title = 'toys-video'
+})
 
 function fmtDuration(sec) {
   const s = Math.round(sec)
@@ -161,25 +189,33 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.hero {
+.channel-head {
   text-align: center;
-  padding: 32px 0 12px;
+  padding: 20px 0 4px;
 }
-.hero-eyebrow {
-  margin: 0 0 14px;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--accent);
+.channel-title {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.channel-sub {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: var(--text-secondary);
 }
 
-.channel-chips {
+.chips {
   display: flex;
   gap: 10px;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-top: 28px;
+  margin: 28px 0 0;
+  overflow-x: auto;
+  padding: 4px 2px;
+  scrollbar-width: none;
 }
-.channel-chip {
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex-shrink: 0;
   padding: 8px 18px;
   border: none;
   border-radius: var(--radius-button);
@@ -189,19 +225,19 @@ onBeforeUnmount(() => {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: color 0.3s var(--ease), transform 0.3s var(--ease), box-shadow 0.3s var(--ease);
+  transition: background 0.3s var(--ease), color 0.3s var(--ease), transform 0.3s var(--ease);
 }
-.channel-chip:hover {
-  color: var(--text);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-card-hover);
+.chip:hover { color: var(--text); transform: translateY(-1px); }
+.chip.is-active {
+  background: var(--text);
+  color: #fff;
 }
 
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 24px;
-  margin-top: 40px;
+  margin-top: 36px;
 }
 
 /* transition 同时承担 reveal 渐入(opacity)与 hover 反馈(transform/box-shadow) */

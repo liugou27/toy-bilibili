@@ -52,7 +52,14 @@
             <span>{{ fmtDate(detail.publishedAt) }} 发布</span>
           </template>
         </div>
-        <p v-if="detail.description" class="desc">{{ detail.description }}</p>
+        <div v-if="detail.category || (detail.tags && detail.tags.length)" class="chip-row">
+          <button v-if="detail.category" class="chip chip-category" type="button" @click="goChannel">{{ categoryName }}</button>
+          <span v-for="t in detail.tags || []" :key="t" class="chip chip-tag">{{ t }}</span>
+        </div>
+        <div v-if="detail.description" class="desc-block">
+          <p class="desc" :class="{ 'is-collapsed': descLong && !descExpanded }">{{ detail.description }}</p>
+          <button v-if="descLong" class="desc-toggle" type="button" @click="descExpanded = !descExpanded">{{ descExpanded ? '收起' : '展开' }}</button>
+        </div>
       </section>
 
       <section v-reveal class="comment-section reveal">
@@ -133,6 +140,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import Artplayer from 'artplayer'
 import ArtplayerPluginDanmuku from 'artplayer-plugin-danmuku'
 import Hls from 'hls.js'
+import axios from 'axios'
 import http from '../api.js'
 import { auth } from '../auth.js'
 
@@ -153,11 +161,42 @@ const resumeHint = ref(null)
 const playCounted = ref(false)
 let lastPosSentAt = 0
 
+// 分区与标签展示:分区名经 categories 接口解析,失败时回退显示分区 key
+const categoryNames = ref({})
+const descExpanded = ref(false)
+const descLong = computed(() => (detail.value?.description || '').length > 120)
+const categoryName = computed(() => {
+  const key = detail.value?.category
+  return key ? (categoryNames.value[key] || key) : ''
+})
+
+/** 直连 axios 静默拉取,避免接口未就绪时触发全局错误 toast */
+async function loadCategoryNames() {
+  try {
+    const resp = await axios.get('/api/videos/categories')
+    const body = resp?.data
+    const list = Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : []
+    const map = {}
+    for (const c of list) {
+      if (c && c.key != null && c.name != null) map[c.key] = c.name
+    }
+    if (Object.keys(map).length) categoryNames.value = map
+  } catch {
+    // 保持空映射,chip 回退显示分区 key
+  }
+}
+
+function goChannel() {
+  const key = detail.value?.category
+  if (key) router.push(`/channel/${key}`)
+}
+
 async function load() {
   playerError.value = false
   destroyArt()
   resumeHint.value = null
   playCounted.value = false
+  descExpanded.value = false
   detail.value = await http.get(`/videos/${route.params.id}`)
   likeCount.value = Number(detail.value.likeCount || 0)
   likedByMe.value = !!detail.value.likedByMe
@@ -477,6 +516,7 @@ watch(() => route.params.id, (id) => {
 
 onMounted(load)
 onMounted(loadRelated)
+onMounted(loadCategoryNames)
 onMounted(() => loadComments(1))
 onBeforeUnmount(() => {
   // 卸载时补报一次进度,避免最后不足 10s 的观看丢失
@@ -757,14 +797,66 @@ onBeforeUnmount(() => {
   font-weight: 500;
 }
 .meta-bar .divider { color: var(--text-tertiary); }
-.desc {
+.chip-row {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1;
+}
+.chip-category {
+  border: none;
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--accent);
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.chip-category:hover { background: rgba(0, 113, 227, 0.16); }
+.chip-tag {
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--text-secondary);
+}
+.desc-block {
   margin: 24px 0 0;
   padding-top: 24px;
   border-top: 1px solid var(--hairline);
+}
+.desc {
+  margin: 0;
   font-size: 16px;
   line-height: 1.7;
   color: var(--text);
   white-space: pre-wrap;
+  word-break: break-word;
+}
+.desc.is-collapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+.desc-toggle {
+  margin-top: 8px;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
 }
 
 .owner-card {

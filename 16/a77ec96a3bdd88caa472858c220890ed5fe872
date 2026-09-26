@@ -1,0 +1,27 @@
+toys-moderation-service/src/main/java/com/toys/video/moderation/controller/SensitiveWordAdminController.java
+  s_17a5063aa38dd4::t_d40cca64b07bf4 46-51
+  s_17a5063aa38dd4::t_fdecb32f78dda5 1-45,52-200
+toys-common/src/test/java/com/toys/video/common/security/JwtUtilTest.java
+  s_17a5063aa38dd4::t_b86e067a34dea1 27-31
+toys-video-service/src/test/java/com/toys/video/video/text/SensitiveWordHolderTest.java
+  s_17a5063aa38dd4::t_297937c8be046f 17-76
+  s_17a5063aa38dd4::t_76d60a7fe36fad 1-16,77-80
+docs/superpowers/specs/2026-09-25-video-platform-microservices-design.md
+  s_17a5063aa38dd4::t_d52c22d13c8549 244-252
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "16a77ec96a3bdd88caa472858c220890ed5fe872",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

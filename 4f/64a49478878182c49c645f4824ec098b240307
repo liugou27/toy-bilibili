@@ -1,0 +1,24 @@
+deploy/docker/Dockerfile.service
+  s_17a5063aa38dd4::t_c9279d68a43175 12-17
+  s_17a5063aa38dd4::t_a53c31197a7e7f 1-11,18-29
+deploy/docker-compose.yml
+  s_17a5063aa38dd4::t_5e07fe9aa8a9c0 39,56-58
+  s_17a5063aa38dd4::t_4cebc9fae28166 76-214
+  s_17a5063aa38dd4::t_5a14731b5d28d0 59-75,215-225,233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4f64a49478878182c49c645f4824ec098b240307",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

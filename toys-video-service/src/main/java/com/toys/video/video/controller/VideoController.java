@@ -61,7 +61,8 @@ public class VideoController {
     @PostMapping("/upload/init")
     public R<InitUploadResponse> initUpload(@jakarta.validation.Valid @RequestBody InitUploadRequest req) {
         Long userId = requireUser();
-        return R.ok(videoService.initUpload(req.fileName(), req.fileSize(), req.md5(), userId));
+        return R.ok(videoService.initUpload(req.fileName(), req.fileSize(), req.md5(), userId,
+                req.title(), req.description(), req.category(), req.tags()));
     }
 
     /** 获取第 partNumber 片直传 MinIO 的预签名地址。 */
@@ -83,7 +84,11 @@ public class VideoController {
     public record InitUploadRequest(
             @jakarta.validation.constraints.NotBlank(message = "文件名不能为空") String fileName,
             @jakarta.validation.constraints.NotNull(message = "文件大小不能为空") Long fileSize,
-            String md5) {
+            String md5,
+            String title,
+            String description,
+            String category,
+            String tags) {
     }
 
     public record CompleteUploadRequest(

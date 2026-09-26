@@ -570,9 +570,11 @@ public class VideoService {
     private static final long STALE_UPLOAD_MS = 7L * 24 * 3600 * 1000;
 
 
-    /** 初始化/恢复/秒传。md5 命中已完成视频 → 秒传;同用户同 md5 未完成会话 → 续传;否则新建会话。 */
+    /** 初始化/恢复/秒传。md5 命中已完成视频 → 秒传;同用户同 md5 未完成会话 → 续传;否则新建会话。
+     *  title/description/category/tags 供秒传分支建记录使用(普通/续传路径在 complete 时提交)。 */
     public com.toys.video.video.dto.InitUploadResponse initUpload(String fileName, long fileSize, String md5,
-                                                                  Long ownerId) {
+                                                                  Long ownerId, String title, String description,
+                                                                  String category, String tags) {
         if (fileSize <= 0) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "文件大小不合法");
         }
@@ -598,8 +600,15 @@ public class VideoService {
             if (done != null) {
                 Video v = new Video();
                 v.setOwnerId(ownerId);
-                v.setTitle(safeName.substring(0, safeName.lastIndexOf('.')));
-                v.setDescription("");
+                // 秒传也采用表单元数据:标题未填才回退文件名
+                v.setTitle(title != null && !title.isBlank() ? title.trim()
+                        : safeName.substring(0, safeName.lastIndexOf('.')));
+                v.setDescription(description == null ? "" : description.trim());
+                v.setCategory(VideoMetaPolicy.normalizeCategory(category));
+                v.setTags(VideoMetaPolicy.normalizeTags(tags));
+                if (v.getDescription().length() > 2000) {
+                    throw BizException.of(ErrorCode.PARAM_INVALID, "简介过长");
+                }
                 v.setStatus(VideoStatus.AUTO_SCREENING.name());
                 v.setObjectKey(done.getObjectKey());
                 v.setOriginalFilename(safeName);

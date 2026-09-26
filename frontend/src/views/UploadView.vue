@@ -293,7 +293,11 @@ async function submit() {
     const init = await http.post('/videos/upload/init', {
       fileName: file.value.name,
       fileSize: file.value.size,
-      md5: md5Cache
+      md5: md5Cache,
+      title: form.title.trim(),
+      description: form.description.trim(),
+      category: form.category || undefined,
+      tags: tags.value.join(',')
     })
     if (init.instant) {
       ElMessage.success('秒传成功:相同内容已存在,无需上传')

@@ -241,7 +241,15 @@ Java 侧用 ProcessBuilder 调用,捕获 stderr 用于错误诊断;脚本非零�
 4. **阶段四**:toys-media-service 转码 + 播放打通 + 播放量异步计数(Redis 缓冲+定时回写)+ 前端播放页/首页/上传页完整化。验收:端到端全链路。
 5. **阶段五(可选增强)**:Sentinel 限流熔断(网关路由级)、预签名直传、search-service 骨架。
 
-## 15b. 互动与账号能力(第二轮补充)
+## 15b-2. 敏感词库行业化(第五轮补充)
+
+- 词库托管:moderation_db.sensitive_words(REJECT/REVIEW 分级、启停状态、分类),ADMIN 管理 API(CRUD/批量导入/搜索分页)与审核中心「敏感词库」管理界面。
+- 热更新:写操作即重载;30s 版本比对自愈(moderation 查 MAX(updated_at));video-service 经 Feign 快照按版本同步、volatile A-B 原子替换 DFA——全程不重启。
+- 变体对抗:NFKC 归一化 + 全角转半角 + 零宽字符与穿透分隔符剔除。
+- 分级语义:REJECT 拒绝(评论/弹幕/标题简介);REVIEW 不拦截,进机审报告 reviewHits 供人审。
+- 生产扩展位:SensitiveWordFilter 为纯 DFA 实现,可再叠加云厂商内容安全客户端做兜底。
+
+## 16. 部署拓扑与跨域策略
 
 - 互动:点赞(video_likes 唯一约束幂等、like_count 防负递减)、收藏(video_favorites,我的收藏列表)、播放历史 + 断点续播(play_histories 每用户每视频一行,upsert 上报,详情返回 resumePosition);视频删除级联清理三表。
 - 账号:修改密码(旧密码校验,改密后当前 jti 立即失效强制重登);JWT 注销采用 jti 白名单(登录登记 Redis,登出/改密删除,网关受保护路径校验,Redis 故障降级为纯验签)。

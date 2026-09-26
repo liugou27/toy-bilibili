@@ -24,7 +24,11 @@ class JwtUtilTest {
     void parseTamperedTokenThrowsJwtException() {
         JwtUtil jwtUtil = new JwtUtil(SECRET, TTL_SECONDS);
         String token = jwtUtil.issue(1L, "USER");
-        String tampered = token.substring(0, token.length() - 2) + "xx";
+        // 确定性篡改:翻转 signature 首字符(避免末尾字符碰巧相同时"篡改"无效)
+        int sigStart = token.lastIndexOf('.') + 1;
+        char[] chars = token.toCharArray();
+        chars[sigStart] = chars[sigStart] == 'A' ? 'B' : 'A';
+        String tampered = new String(chars);
         assertThrows(JwtException.class, () -> jwtUtil.parse(tampered));
     }
 

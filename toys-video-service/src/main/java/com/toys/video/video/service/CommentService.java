@@ -7,11 +7,11 @@ import com.toys.video.api.feign.UserInternalClient;
 import com.toys.video.common.api.PageResult;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
-import com.toys.video.common.text.SensitiveWordFilter;
 import com.toys.video.video.dto.CommentItem;
 import com.toys.video.video.entity.Comment;
 import com.toys.video.video.mapper.CommentMapper;
 import com.toys.video.video.mapper.VideoMapper;
+import com.toys.video.video.text.SensitiveWordHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -37,7 +37,7 @@ public class CommentService {
     private final CommentMapper commentMapper;
     private final VideoMapper videoMapper;
     private final UserInternalClient userInternalClient;
-    private final SensitiveWordFilter sensitiveWordFilter;
+    private final SensitiveWordHolder sensitiveWordHolder;
 
     /** 发评论:视频必须存在,正文非空、≤500 字且不命中敏感词。 */
     public CommentItem post(Long videoId, Long userId, String content) {
@@ -85,7 +85,7 @@ public class CommentService {
                 .eq(Comment::getVideoId, videoId));
     }
 
-    /** 正文校验:非空、≤500 字,命中敏感词即拒绝;返回 trim 后正文。 */
+    /** 正文校验:非空、≤500 字,命中 REJECT 级敏感词即拒绝;返回 trim 后正文。 */
     String validateContent(String content) {
         if (content == null || content.isBlank()) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "评论内容不能为空");
@@ -94,7 +94,7 @@ public class CommentService {
             throw BizException.of(ErrorCode.PARAM_INVALID, "评论不能超过" + MAX_CONTENT_LENGTH + "字");
         }
         String trimmed = content.trim();
-        if (!sensitiveWordFilter.screen(trimmed).isEmpty()) {
+        if (!sensitiveWordHolder.current().screen(trimmed).isEmpty()) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "内容包含违规词汇");
         }
         return trimmed;

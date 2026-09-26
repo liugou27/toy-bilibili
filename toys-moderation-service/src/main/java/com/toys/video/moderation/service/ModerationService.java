@@ -1,9 +1,9 @@
 package com.toys.video.moderation.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.toys.video.api.enums.VideoStatus;
 import com.toys.video.api.feign.VideoInternalClient;
 import com.toys.video.common.exception.BizException;
@@ -33,7 +33,7 @@ public class ModerationService {
     private final ModerationReportMapper reportMapper;
     private final AutoScreenService autoScreenService;
     private final VideoInternalClient videoInternalClient;
-    private final SensitiveWordFilter sensitiveWordFilter;
+    private final SensitiveWordService sensitiveWordService;
 
     /** 事件触发:先文本机审(标题/简介),再画面机审并推进状态。状态回写失败(2105)视为重复/过期投递,幂等跳过。 */
     public void moderate(Long videoId, String objectKey, String title, String description) {
@@ -43,21 +43,28 @@ public class ModerationService {
             return;
         }
 
-        // 文本机审先行:标题/简介命中敏感词即硬失败,直接走自动拒绝,跳过画面机审省资源
-        List<String> textHits = sensitiveWordFilter.screen(
+        // 文本机审先行:REJECT 命中即硬失败,直接走自动拒绝,跳过画面机审省资源;
+        // 仅 REVIEW 命中不拒绝,记入机审报告供人审参考,流程照常
+        SensitiveWordFilter filter = sensitiveWordService.current();
+        Map<String, List<String>> hits = filter.screenWithLevel(
                 (title == null ? "" : title) + "\n" + (description == null ? "" : description));
-        boolean textFail = !textHits.isEmpty();
+        List<String> rejectHits = hits.getOrDefault(SensitiveWordFilter.LEVEL_REJECT, List.of());
+        List<String> reviewHits = hits.getOrDefault(SensitiveWordFilter.LEVEL_REVIEW, List.of());
+        boolean textFail = !rejectHits.isEmpty();
 
         JsonNode meta = null;
         String verdict;
         String reportJson;
         if (textFail) {
             verdict = "AUTO_FAIL";
-            reportJson = textReportJson(textHits);
+            reportJson = textReportJson(rejectHits, reviewHits);
         } else {
             JsonNode result = autoScreenService.screen(objectKey);
             verdict = result.path("verdict").asText("AUTO_FAIL");
             meta = result.path("meta");
+            if (!reviewHits.isEmpty() && result instanceof ObjectNode obj) {
+                obj.set("reviewHits", OBJECT_MAPPER.valueToTree(reviewHits));
+            }
             reportJson = result.toString();
         }
 
@@ -71,7 +78,7 @@ public class ModerationService {
         String rejectReason = null;
         if (autoReject) {
             rejectReason = textFail
-                    ? "机审未通过:文本包含违规内容(" + String.join("、", textHits) + ")"
+                    ? "机审未通过:文本包含违规内容(" + String.join("、", rejectHits) + ")"
                     : "机审自动拒绝:内容不合规或文件异常";
             report.setRejectReason(rejectReason);
             report.setDecidedAt(LocalDateTime.now());
@@ -94,15 +101,16 @@ public class ModerationService {
         log.info("video {} auto-screened: {} -> {}", videoId, verdict, update.target());
     }
 
-    /** 文本机审报告 JSON:命中来源与命中词,字段对齐画面机审报告的 verdict。 */
-    private String textReportJson(List<String> hits) {
-        try {
-            return OBJECT_MAPPER.writeValueAsString(
-                    Map.of("verdict", "AUTO_FAIL", "source", "text", "hits", hits));
-        } catch (JsonProcessingException e) {
-            log.warn("text report serialize failed", e);
-            return "{\"verdict\":\"AUTO_FAIL\",\"source\":\"text\"}";
+    /** 文本机审报告 JSON:REJECT 命中决定 verdict,REVIEW 命中记入 reviewHits 供人审参考。 */
+    private String textReportJson(List<String> rejectHits, List<String> reviewHits) {
+        ObjectNode node = OBJECT_MAPPER.createObjectNode();
+        node.put("verdict", "AUTO_FAIL");
+        node.put("source", "text");
+        node.set("hits", OBJECT_MAPPER.valueToTree(rejectHits));
+        if (!reviewHits.isEmpty()) {
+            node.set("reviewHits", OBJECT_MAPPER.valueToTree(reviewHits));
         }
+        return node.toString();
     }
 
     public Map<String, Object> reviewDetail(Long videoId) {

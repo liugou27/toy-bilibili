@@ -3,11 +3,11 @@ package com.toys.video.video.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
-import com.toys.video.common.text.SensitiveWordFilter;
 import com.toys.video.video.dto.DanmakuItem;
 import com.toys.video.video.entity.Danmaku;
 import com.toys.video.video.mapper.DanmakuMapper;
 import com.toys.video.video.mapper.VideoMapper;
+import com.toys.video.video.text.SensitiveWordHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,7 +31,7 @@ public class DanmakuService {
 
     private final DanmakuMapper danmakuMapper;
     private final VideoMapper videoMapper;
-    private final SensitiveWordFilter sensitiveWordFilter;
+    private final SensitiveWordHolder sensitiveWordHolder;
 
     /** 发弹幕:视频必须存在,timeSec≥0,正文非空、≤100 字且不命中敏感词。 */
     public DanmakuItem post(Long videoId, Long userId, Double timeSec, String content) {
@@ -66,7 +66,7 @@ public class DanmakuService {
                 .eq(Danmaku::getVideoId, videoId));
     }
 
-    /** 正文校验:非空、≤100 字,命中敏感词即拒绝;返回 trim 后正文。 */
+    /** 正文校验:非空、≤100 字,命中 REJECT 级敏感词即拒绝;返回 trim 后正文。 */
     String validateContent(String content) {
         if (content == null || content.isBlank()) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "弹幕内容不能为空");
@@ -75,7 +75,7 @@ public class DanmakuService {
             throw BizException.of(ErrorCode.PARAM_INVALID, "弹幕不能超过" + MAX_CONTENT_LENGTH + "字");
         }
         String trimmed = content.trim();
-        if (!sensitiveWordFilter.screen(trimmed).isEmpty()) {
+        if (!sensitiveWordHolder.current().screen(trimmed).isEmpty()) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "内容包含违规词汇");
         }
         return trimmed;

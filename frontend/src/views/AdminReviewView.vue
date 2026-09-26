@@ -44,6 +44,63 @@
       </el-table>
     </el-card>
 
+    <el-card shadow="never" class="sw-card">
+      <template #header>
+        <div class="card-bar">
+          <span class="card-title">敏感词库</span>
+          <div class="sw-head-actions">
+            <el-input v-model="wKeyword" class="sw-search" placeholder="搜索敏感词" clearable @input="onKeywordInput" />
+            <el-button size="small" round @click="openImport">批量导入</el-button>
+            <el-button size="small" round type="primary" @click="openAdd">新增</el-button>
+          </div>
+        </div>
+      </template>
+      <el-empty v-if="!words.length && !wLoading" description="词库为空" />
+      <el-table v-else :data="words" v-loading="wLoading">
+        <el-table-column label="词" min-width="200">
+          <template #default="{ row }"><span class="sw-word">{{ row.word }}</span></template>
+        </el-table-column>
+        <el-table-column label="级别" width="120">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.level === 'REJECT' ? 'danger' : 'warning'">
+              {{ row.level === 'REJECT' ? '拒绝' : '人工审核' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="分类" width="140">
+          <template #default="{ row }">{{ row.category || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.status === 'ENABLED' ? 'success' : 'info'">
+              {{ row.status === 'ENABLED' ? '启用' : '停用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="更新时间" width="180">
+          <template #default="{ row }">{{ fmtTime(row.updatedAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="170">
+          <template #default="{ row }">
+            <el-button size="small" round :loading="busyId === row.id" :disabled="busyId !== null && busyId !== row.id"
+                       @click="toggleStatus(row)">
+              {{ row.status === 'ENABLED' ? '停用' : '启用' }}
+            </el-button>
+            <el-button size="small" round type="danger" plain :disabled="busyId !== null" @click="removeWord(row)">
+              删除
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="wTotal > W_SIZE" class="sw-foot">
+        <el-pagination
+          size="small" background layout="prev, pager, next"
+          :total="wTotal" :page-size="W_SIZE"
+          v-model:current-page="wPage" @current-change="loadWords"
+        />
+      </div>
+    </el-card>
+
     <el-dialog v-model="dialog" title="审核详情" width="720px" destroy-on-close @closed="destroyPlayer">
       <div v-if="detail" v-loading="detailLoading">
         <video ref="reviewPlayer" :src="detail.presignedUrl" controls class="review-player"></video>
@@ -83,12 +140,49 @@
         <el-button type="danger" round :loading="acting" @click="reject">确认拒绝</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="wordDialog" title="新增敏感词" width="440px" append-to-body>
+      <el-form label-width="56px">
+        <el-form-item label="词语" required>
+          <el-input v-model="wordForm.word" maxlength="50" placeholder="必填" @keyup.enter="addWord" />
+        </el-form-item>
+        <el-form-item label="级别">
+          <el-radio-group v-model="wordForm.level">
+            <el-radio value="REJECT">拒绝</el-radio>
+            <el-radio value="REVIEW">人工审核</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="分类">
+          <el-input v-model="wordForm.category" maxlength="30" placeholder="可选" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button round @click="wordDialog = false">取消</el-button>
+        <el-button type="primary" round :loading="adding" @click="addWord">新增</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="importDialog" title="批量导入敏感词" width="480px" append-to-body>
+      <div class="sw-import-level">
+        <span class="sw-import-label">级别</span>
+        <el-radio-group v-model="importLevel">
+          <el-radio value="REJECT">拒绝</el-radio>
+          <el-radio value="REVIEW">人工审核</el-radio>
+        </el-radio-group>
+      </div>
+      <el-input v-model="importText" type="textarea" :rows="8" placeholder="每行一个敏感词" />
+      <p class="sw-import-hint">将导入 {{ importCount }} 个词,自动去空行与重复</p>
+      <template #footer>
+        <el-button round @click="importDialog = false">取消</el-button>
+        <el-button type="primary" round :loading="importing" :disabled="!importCount" @click="importWords">导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '../api.js'
 import { auth } from '../auth.js'
 
@@ -106,6 +200,22 @@ const reviewPlayer = ref(null)
 let currentVideoId = null
 let pollTimer = null
 
+const W_SIZE = 10
+const words = ref([])
+const wTotal = ref(0)
+const wPage = ref(1)
+const wKeyword = ref('')
+const wLoading = ref(false)
+const wordDialog = ref(false)
+const adding = ref(false)
+const importDialog = ref(false)
+const importing = ref(false)
+const importText = ref('')
+const importLevel = ref('REJECT')
+const busyId = ref(null)
+const wordForm = ref({ word: '', level: 'REJECT', category: '' })
+let kwTimer = null
+
 const videoTitle = computed(() => {
   const item = queue.value.find((q) => q.videoId === currentVideoId)
   return item?.title || ''
@@ -121,6 +231,126 @@ const report = computed(() => {
 })
 const blackRatio = computed(() => report.value?.autoReport?.black_ratio)
 const checks = computed(() => report.value?.autoReport?.checks || [])
+
+const importCount = computed(() => parseImport().length)
+
+function parseImport() {
+  return [...new Set(importText.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean))]
+}
+
+async function loadWords() {
+  wLoading.value = true
+  try {
+    const data = await http.get('/admin/sensitive-words', {
+      params: { page: wPage.value, size: W_SIZE, keyword: wKeyword.value.trim() || undefined }
+    })
+    words.value = data.list
+    wTotal.value = data.total
+  } finally {
+    wLoading.value = false
+  }
+}
+
+function onKeywordInput() {
+  clearTimeout(kwTimer)
+  kwTimer = setTimeout(() => {
+    wPage.value = 1
+    loadWords()
+  }, 300)
+}
+
+function openAdd() {
+  wordForm.value = { word: '', level: 'REJECT', category: '' }
+  wordDialog.value = true
+}
+
+async function addWord() {
+  const word = wordForm.value.word.trim()
+  if (!word) {
+    ElMessage.warning('请输入敏感词')
+    return
+  }
+  adding.value = true
+  try {
+    await http.post('/admin/sensitive-words', {
+      word,
+      level: wordForm.value.level,
+      category: wordForm.value.category.trim() || undefined
+    })
+    ElMessage.success('已新增,词库即时生效')
+    wordDialog.value = false
+    loadWords()
+  } finally {
+    adding.value = false
+  }
+}
+
+function openImport() {
+  importText.value = ''
+  importLevel.value = 'REJECT'
+  importDialog.value = true
+}
+
+async function importWords() {
+  const parsed = parseImport()
+  if (!parsed.length) {
+    ElMessage.warning('请输入至少一个敏感词')
+    return
+  }
+  importing.value = true
+  try {
+    await http.post('/admin/sensitive-words/import', { words: parsed, level: importLevel.value })
+    ElMessage.success(`已导入 ${parsed.length} 个词,词库即时生效`)
+    importDialog.value = false
+    loadWords()
+  } finally {
+    importing.value = false
+  }
+}
+
+async function toggleStatus(row) {
+  const next = row.status === 'ENABLED' ? 'DISABLED' : 'ENABLED'
+  const label = next === 'DISABLED' ? '停用' : '启用'
+  try {
+    await ElMessageBox.confirm(
+      `确定${label}敏感词「${row.word}」吗?${next === 'DISABLED' ? '停用后该词不再参与匹配。' : ''}`,
+      `${label}敏感词`,
+      { type: 'warning', confirmButtonText: label, cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  busyId.value = row.id
+  try {
+    await http.patch(`/admin/sensitive-words/${row.id}/status`, { status: next })
+    ElMessage.success(`已${label}`)
+    loadWords()
+  } finally {
+    busyId.value = null
+  }
+}
+
+async function removeWord(row) {
+  try {
+    await ElMessageBox.confirm(`确定删除敏感词「${row.word}」吗?删除后不可恢复。`, '删除敏感词', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  busyId.value = row.id
+  try {
+    await http.delete(`/admin/sensitive-words/${row.id}`)
+    ElMessage.success('已删除')
+    const lastPage = Math.max(1, Math.ceil((wTotal.value - 1) / W_SIZE))
+    if (wPage.value > lastPage) wPage.value = lastPage
+    loadWords()
+  } finally {
+    busyId.value = null
+  }
+}
 
 async function load() {
   try {
@@ -235,9 +465,13 @@ function fmtTime(d) {
 
 onMounted(() => {
   load()
+  loadWords()
   pollTimer = setInterval(load, 10000)
 })
-onBeforeUnmount(() => pollTimer && clearInterval(pollTimer))
+onBeforeUnmount(() => {
+  pollTimer && clearInterval(pollTimer)
+  clearTimeout(kwTimer)
+})
 </script>
 
 <style scoped>
@@ -275,4 +509,14 @@ onBeforeUnmount(() => pollTimer && clearInterval(pollTimer))
 .review-player { display: block; width: 100%; max-height: 400px; background: #000; border-radius: 16px; }
 .review-title { margin: 16px 0 12px; font-size: 17px; }
 .actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+
+.sw-card { margin-top: 24px; }
+.sw-head-actions { display: flex; align-items: center; gap: 8px; }
+.sw-search { width: 180px; }
+.sw-search :deep(.el-input__wrapper) { border-radius: var(--radius-button); }
+.sw-word { font-weight: 500; }
+.sw-foot { display: flex; justify-content: flex-end; margin-top: 16px; }
+.sw-import-level { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.sw-import-label { font-size: 14px; color: var(--text-secondary); }
+.sw-import-hint { margin: 8px 0 0; font-size: 12px; color: var(--text-tertiary); }
 </style>

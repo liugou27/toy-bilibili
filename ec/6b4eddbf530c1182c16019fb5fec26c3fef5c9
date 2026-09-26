@@ -1,0 +1,23 @@
+toys-video-service/src/main/java/com/toys/video/video/controller/VideoController.java
+  s_17a5063aa38dd4::t_4dcd601f5a3ad9 64-65,87-91
+frontend/src/views/UploadView.vue
+  s_17a5063aa38dd4::t_1df7b647ef7635 296-300
+toys-video-service/src/main/java/com/toys/video/video/service/VideoService.java
+  s_17a5063aa38dd4::t_4dcd601f5a3ad9 573-574,576-577,603-611
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ec6b4eddbf530c1182c16019fb5fec26c3fef5c9",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

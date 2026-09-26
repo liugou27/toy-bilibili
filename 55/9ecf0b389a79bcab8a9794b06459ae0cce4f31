@@ -1,0 +1,20 @@
+toys-user-service/src/test/java/com/toys/video/user/service/UsernameBloomServiceTest.java
+  s_17a5063aa38dd4::t_077d3c9792c36b 30-37,49,60,84,101,115,124,139
+  s_17a5063aa38dd4::t_06619419476700 1-29,38-48,50-59,61-83,85-100,102-114,116-123,125-138,140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "559ecf0b389a79bcab8a9794b06459ae0cce4f31",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

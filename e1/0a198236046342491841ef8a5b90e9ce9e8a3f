@@ -1,0 +1,26 @@
+toys-video-service/src/main/java/com/toys/video/video/service/DanmakuService.java
+  s_17a5063aa38dd4::t_2970cc0e768d57 38-42
+  s_17a5063aa38dd4::t_d4c424f3c01f1b 1-37,43-89
+toys-video-service/src/test/java/com/toys/video/video/service/DanmakuServiceTest.java
+  s_17a5063aa38dd4::t_056c4fa1db9bc3 11-39,49,62,69,76,83
+  s_17a5063aa38dd4::t_cd31be152fe322 1-10,40-48,50-61,63-68,70-75,77-82,84
+toys-video-service/src/test/java/com/toys/video/video/service/CommentServiceTest.java
+  s_17a5063aa38dd4::t_056c4fa1db9bc3 13-45,55,71,77,84,96,106,117
+  s_17a5063aa38dd4::t_d58d1dac108dea 1-12,46-54,56-70,72-76,78-83,85-95,97-105,107-116,118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e10a198236046342491841ef8a5b90e9ce9e8a3f",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

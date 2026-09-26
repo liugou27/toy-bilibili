@@ -3,7 +3,7 @@
     <section class="hero reveal" v-reveal>
       <p v-if="query.keyword" class="hero-eyebrow">“{{ query.keyword }}” 的搜索结果</p>
       <h1 class="hero-title">每一个瞬间,都值得被看见</h1>
-      <p class="hero-subtitle">随手记录,随时观看。来自社区创作者的每个精彩视频,都在这里。</p>
+      <p class="hero-subtitle">{{ query.keyword ? '随手记录,随时观看。来自社区创作者的每个精彩视频,都在这里。' : '为你推荐来自社区创作者的每个精彩视频,随手记录,随时观看。' }}</p>
     </section>
 
     <div v-if="loading" class="grid" aria-hidden="true">

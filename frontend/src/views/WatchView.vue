@@ -67,6 +67,26 @@
       <p v-if="detail.description" class="desc">{{ detail.description }}</p>
     </section>
 
+    <section v-if="relatedList.length" v-reveal class="related-section reveal">
+      <h2 class="related-title">相关推荐</h2>
+      <ul class="related-list">
+        <li v-for="v in relatedList" :key="v.id" class="related-item" @click="goRelated(v.id)">
+          <div class="related-thumb">
+            <img v-if="v.poster" :src="v.poster" loading="lazy" :alt="v.title" />
+            <div v-else class="related-thumb-placeholder">暂无封面</div>
+            <span v-if="v.durationSec" class="related-duration">{{ fmtTime(v.durationSec) }}</span>
+          </div>
+          <div class="related-body">
+            <div class="related-item-title">{{ v.title }}</div>
+            <div class="related-meta">
+              <span>{{ v.ownerName || 'UP主' }}</span>
+              <span>{{ fmtCount(v.playCount) }} 播放</span>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </section>
+
     <section v-reveal class="comment-section reveal">
       <h2 class="comment-title">评论 {{ commentTotal }} 条</h2>
       <div v-if="auth.user" class="comment-editor">
@@ -109,14 +129,15 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import Hls from 'hls.js'
 import http from '../api.js'
 import { auth } from '../auth.js'
 
 const route = useRoute()
+const router = useRouter()
 const playerEl = ref(null)
 const detail = ref(null)
 const playerError = ref(false)
@@ -130,6 +151,9 @@ let lastPosSentAt = 0
 
 async function load() {
   playerError.value = false
+  destroyHls()
+  playerEl.value?.pause()
+  resumeHint.value = null
   detail.value = await http.get(`/videos/${route.params.id}`)
   likeCount.value = Number(detail.value.likeCount || 0)
   likedByMe.value = !!detail.value.likedByMe
@@ -393,6 +417,34 @@ async function removeComment(item) {
   }
 }
 
+/** 相关推荐:id 变化时清空旧数据再拉取;为空或失败时整个区块不渲染。 */
+const relatedList = ref([])
+
+async function loadRelated() {
+  relatedList.value = []
+  try {
+    const data = await http.get(`/videos/${route.params.id}/related`, { params: { size: 10 } })
+    relatedList.value = Array.isArray(data?.list) ? data.list : []
+  } catch {
+    relatedList.value = []
+  }
+}
+
+function goRelated(id) {
+  if (String(id) === String(route.params.id)) return
+  router.push(`/watch/${id}`)
+}
+
+// 路由组件在 /watch/:id 之间跳转时被复用,需手动重载全部页面状态并回到顶部
+watch(() => route.params.id, (id) => {
+  if (!id) return
+  window.scrollTo({ top: 0 })
+  load()
+  loadDanmaku()
+  loadComments(1)
+  loadRelated()
+})
+
 onMounted(() => {
   const video = playerEl.value
   if (!video) return
@@ -402,6 +454,7 @@ onMounted(() => {
 })
 onMounted(load)
 onMounted(loadDanmaku)
+onMounted(loadRelated)
 onMounted(() => loadComments(1))
 onBeforeUnmount(destroyHls)
 onBeforeUnmount(() => {
@@ -743,6 +796,103 @@ onBeforeUnmount(() => {
   line-height: 1.7;
   color: var(--text);
   white-space: pre-wrap;
+}
+
+.related-section { padding: 8px 0; }
+.related-title {
+  margin: 28px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.related-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 10px 24px;
+}
+.related-item {
+  display: flex;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: transform 0.3s var(--ease), background 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+.related-item:hover {
+  transform: translateY(-2px);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.related-thumb {
+  position: relative;
+  flex: none;
+  width: 160px;
+  aspect-ratio: 16/9;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #e8e8ed;
+}
+.related-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.related-thumb-placeholder {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  background: linear-gradient(150deg, #ececf1, #e3e3e8);
+}
+.related-duration {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 2px 7px;
+  border-radius: var(--radius-button);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.related-body {
+  flex: 1;
+  min-width: 0;
+  padding-top: 2px;
+}
+.related-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.related-meta {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.related-meta span + span::before {
+  content: '·';
+  color: var(--text-tertiary);
+  margin-right: 8px;
 }
 
 .comment-section { padding: 8px 0 64px; }

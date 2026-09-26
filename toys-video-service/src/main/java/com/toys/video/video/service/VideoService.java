@@ -72,6 +72,8 @@ public class VideoService {
 
     private static final String LIST_CACHE_PREFIX = "cache:videos:list:";
     private static final java.time.Duration LIST_CACHE_TTL = java.time.Duration.ofSeconds(60);
+    private static final String RELATED_CACHE_PREFIX = "cache:videos:related:";
+    private static final java.time.Duration RELATED_CACHE_TTL = java.time.Duration.ofSeconds(300);
 
     @Value("${toys.upload.allowed-exts:mp4,mkv,mov,avi,flv}")
     private String allowedExts;
@@ -132,9 +134,9 @@ public class VideoService {
         return new com.toys.video.video.dto.UploadResponse(video.getId(), video.getStatus());
     }
 
-    /** 首页列表:cache-aside,60s TTL;状态变更/新投稿时整组失效。 */
-    public PageResult<VideoCard> publishedPage(long page, long size, String keyword) {
-        String key = listCacheKey(page, size, keyword);
+    /** 首页列表:cache-aside,60s TTL;关键词搜索/登录个性化/匿名融合分流,状态变更/新投稿时整组失效。 */
+    public PageResult<VideoCard> publishedPage(long page, long size, String keyword, Long userId) {
+        String key = listCacheKey(page, size, keyword, userId);
         try {
             String cached = redis.opsForValue().get(key);
             if (cached != null) {
@@ -144,9 +146,14 @@ public class VideoService {
         } catch (Exception e) {
             log.warn("list cache read failed, fall back to db: {}", e.getMessage());
         }
-        IPage<Video> p = (keyword == null || keyword.isBlank())
-                ? recommendGateway.recommend(page, size)
-                : searchGateway.searchPublished(keyword, page, size);
+        IPage<Video> p;
+        if (keyword != null && !keyword.isBlank()) {
+            p = searchGateway.searchPublished(keyword, page, size);
+        } else if (userId != null) {
+            p = recommendGateway.recommendForUser(userId, page, size);
+        } else {
+            p = recommendGateway.recommend(page, size);
+        }
         PageResult<VideoCard> result = toCards(p);
         try {
             redis.opsForValue().set(key, objectMapper.writeValueAsString(result), LIST_CACHE_TTL);
@@ -156,16 +163,46 @@ public class VideoService {
         return result;
     }
 
-    private String listCacheKey(long page, long size, String keyword) {
+    private String listCacheKey(long page, long size, String keyword, Long userId) {
         String kw = keyword == null ? "" : keyword.trim().toLowerCase(java.util.Locale.ROOT);
-        return LIST_CACHE_PREFIX + page + ":" + size + ":" + Integer.toHexString(kw.hashCode());
+        // 融合推荐结果因人而异:匿名与登录用户、不同登录用户分别缓存
+        String user = userId == null ? "anon" : "u" + userId;
+        return LIST_CACHE_PREFIX + page + ":" + size + ":" + Integer.toHexString(kw.hashCode()) + ":" + user;
     }
 
-    /** 列表缓存整组失效:任何会影响首页可见内容的写入后调用。 */
+    /** 相关视频:共现为主、热度补齐;cache-aside,300s TTL。 */
+    public PageResult<VideoCard> related(Long videoId, int size) {
+        String key = RELATED_CACHE_PREFIX + videoId + ":" + size;
+        try {
+            String cached = redis.opsForValue().get(key);
+            if (cached != null) {
+                return objectMapper.readValue(cached,
+                        new com.fasterxml.jackson.core.type.TypeReference<PageResult<VideoCard>>() {});
+            }
+        } catch (Exception e) {
+            log.warn("related cache read failed, fall back to db: {}", e.getMessage());
+        }
+        PageResult<VideoCard> result = toCards(recommendGateway.related(videoId, size));
+        try {
+            redis.opsForValue().set(key, objectMapper.writeValueAsString(result), RELATED_CACHE_TTL);
+        } catch (Exception e) {
+            log.warn("related cache write failed: {}", e.getMessage());
+        }
+        return result;
+    }
+
+    /** 列表/相关视频缓存整组失效:任何会影响首页可见内容的写入后调用。 */
     private void evictListCache() {
         try {
             java.util.Set<String> keys = redis.keys(LIST_CACHE_PREFIX + "*");
-            if (keys != null && !keys.isEmpty()) {
+            java.util.Set<String> relatedKeys = redis.keys(RELATED_CACHE_PREFIX + "*");
+            if (keys == null) {
+                keys = new java.util.HashSet<>();
+            }
+            if (relatedKeys != null) {
+                keys.addAll(relatedKeys);
+            }
+            if (!keys.isEmpty()) {
                 redis.delete(keys);
             }
         } catch (Exception e) {

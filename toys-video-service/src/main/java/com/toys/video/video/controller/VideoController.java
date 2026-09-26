@@ -87,11 +87,19 @@ public class VideoController {
             String description) {
     }
 
+    /** 首页列表:有关键词走搜索;无关键词按登录态走个性化/匿名融合推荐。 */
     @GetMapping
     public R<PageResult<VideoCard>> list(@RequestParam(defaultValue = "1") long page,
                                          @RequestParam(defaultValue = "12") long size,
                                          @RequestParam(required = false) String keyword) {
-        return R.ok(videoService.publishedPage(page, Math.min(size, 50), keyword));
+        return R.ok(videoService.publishedPage(page, Math.min(size, 50), keyword, UserContext.userId()));
+    }
+
+    /** 相关视频:公开,共现为主、热度补齐。 */
+    @GetMapping("/{id}/related")
+    public R<PageResult<VideoCard>> related(@PathVariable Long id,
+                                            @RequestParam(defaultValue = "10") int size) {
+        return R.ok(videoService.related(id, Math.min(size, 50)));
     }
 
     @GetMapping("/{id}")

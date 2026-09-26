@@ -59,7 +59,7 @@ let lastPosSentAt = 0
 async function load() {
   playerError.value = false
   detail.value = await http.get(`/videos/${route.params.id}`)
-  likeCount.value = detail.value.likeCount || 0
+  likeCount.value = Number(detail.value.likeCount || 0)
   likedByMe.value = !!detail.value.likedByMe
   // 播放量异步计数
   http.post(`/videos/${route.params.id}/play`).catch(() => {})
@@ -73,7 +73,7 @@ async function toggleLike() {
   if (likePending.value) return
   const target = !likedByMe.value
   likePending.value = true
-  likeCount.value += target ? 1 : -1
+  likeCount.value = Number(likeCount.value) + (target ? 1 : -1)
   likedByMe.value = target
   try {
     if (target) {

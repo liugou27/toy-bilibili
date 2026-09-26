@@ -7,7 +7,7 @@ public record VideoCard(
         String title,
         String poster,
         Double durationSec,
-        Long playCount,
+        long playCount,
         Long ownerId,
         String ownerName,
         String status,
@@ -18,7 +18,7 @@ public record VideoCard(
 ) {
 
     /** 常规列表卡片:无断点位置。 */
-    public VideoCard(Long id, String title, String poster, Double durationSec, Long playCount,
+    public VideoCard(Long id, String title, String poster, Double durationSec, long playCount,
                      Long ownerId, String ownerName, String status, String note, LocalDateTime publishedAt) {
         this(id, title, poster, durationSec, playCount, ownerId, ownerName, status, note, publishedAt, null);
     }

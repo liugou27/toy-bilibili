@@ -1,0 +1,45 @@
+toys-gateway/src/main/java/com/toys/video/gateway/filter/AuthGlobalFilter.java
+  s_17a5063aa38dd4::t_0b15ae40c1a31a 77-79,93-94,96-97,99-111,142-143,146,148,150,152,154-155,157-162
+  s_17a5063aa38dd4::t_f6355f81e289f9 95,98,156
+  s_17a5063aa38dd4::t_f34021684a28b0 53,56-57,59
+toys-common/src/main/java/com/toys/video/common/security/JwtUtil.java
+  s_17a5063aa38dd4::t_1a682fd4092716 36,56,59-60
+toys-user-service/src/main/java/com/toys/video/user/service/AuthService.java
+  s_17a5063aa38dd4::t_251ab57ccda17c 41,57-59,71-90,92-94
+  s_17a5063aa38dd4::t_f6355f81e289f9 42-43,91
+frontend/src/api.js
+  s_17a5063aa38dd4::t_f34021684a28b0 39-40
+toys-user-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_eb2b1b50548977 14-17
+toys-user-service/pom.xml
+  s_17a5063aa38dd4::t_eb2b1b50548977 29-31
+  s_17a5063aa38dd4::t_add958611ae4ae 28
+toys-gateway/src/main/java/com/toys/video/gateway/ratelimit/RateLimitConfig.java
+  s_17a5063aa38dd4::t_f34021684a28b0 26-30
+toys-video-service/src/main/java/com/toys/video/video/service/VideoService.java
+  s_17a5063aa38dd4::t_f34021684a28b0 112-113,251-352,427-428,543-544
+toys-video-service/src/main/java/com/toys/video/video/service/PlayCountService.java
+  s_17a5063aa38dd4::t_cc5d6c6c448d32 57
+  s_17a5063aa38dd4::t_097e2eef8b5dd6 15-17,21,28-30,35,43-47,53-56,58-80
+toys-video-service/src/test/java/com/toys/video/video/service/PlayCountServiceTest.java
+  s_17a5063aa38dd4::t_cc5d6c6c448d32 31-32
+  s_17a5063aa38dd4::t_907fd059f62db6 1-30,33-54
+toys-user-service/src/main/java/com/toys/video/user/controller/AuthController.java
+  s_17a5063aa38dd4::t_27295a8012d648 33-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f18876110eccbf6567b02caf3d94a212560a8c64",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

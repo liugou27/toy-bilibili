@@ -739,11 +739,14 @@ public class VideoService {
                 .collect(Collectors.toMap(Video::getId, Function.identity(), (a, b) -> a));
     }
 
+    /** UP 主展示名:nickname 非空优先,回退 username;Feign 失败时以「用户{id}」兜底。 */
     private Map<Long, String> fetchOwnerNames(List<Long> ownerIds) {
         try {
             return userInternalClient.batch(ownerIds).data().stream()
                     .collect(Collectors.toMap(UserInternalClient.UserBrief::id,
-                            UserInternalClient.UserBrief::username, (a, b) -> a));
+                            brief -> brief.nickname() != null && !brief.nickname().isBlank()
+                                    ? brief.nickname() : brief.username(),
+                            (a, b) -> a));
         } catch (Exception e) {
             log.warn("fetch owner names failed: {}", e.getMessage());
             return ownerIds.stream().collect(Collectors.toMap(Function.identity(), id -> "用户" + id, (a, b) -> a));

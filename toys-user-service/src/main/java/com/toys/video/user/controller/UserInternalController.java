@@ -30,10 +30,10 @@ public class UserInternalController {
             return R.ok(List.of());
         }
         return R.ok(userMapper.selectBatchIds(ids).stream()
-                .map(u -> new UserBrief(u.getId(), u.getUsername()))
+                .map(u -> new UserBrief(u.getId(), u.getUsername(), u.getNickname()))
                 .toList());
     }
 
-    public record UserBrief(Long id, String username) {
+    public record UserBrief(Long id, String username, String nickname) {
     }
 }

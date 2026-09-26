@@ -87,10 +87,10 @@
       </div>
       <ul v-if="comments.length" v-loading="commentLoading" class="comment-list">
         <li v-for="item in comments" :key="item.id" class="comment-item">
-          <span class="comment-avatar">{{ avatarChar(item.username) }}</span>
+          <span class="comment-avatar">{{ avatarChar(item.nickname || item.username) }}</span>
           <div class="comment-body">
             <div class="comment-head">
-              <span class="comment-user">{{ item.username }}</span>
+              <span class="comment-user">{{ item.nickname || item.username }}</span>
               <span class="comment-time">{{ fmtRelative(item.createdAt) }}</span>
             </div>
             <p class="comment-content">{{ item.content }}</p>

@@ -21,6 +21,12 @@ public class User {
     /** USER | ADMIN */
     private String role;
 
+    /** 展示昵称,未设置时展示回退 username。 */
+    private String nickname;
+
+    /** 头像地址,未设置时前端显示首字圆点。 */
+    private String avatar;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

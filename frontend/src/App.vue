@@ -13,8 +13,8 @@
           <template v-if="auth.user">
             <el-dropdown @command="onUserCommand" trigger="click">
               <span class="nav-user">
-                <span class="avatar">{{ auth.user.username.slice(0, 1).toUpperCase() }}</span>
-                {{ auth.user.username }}
+                <span class="avatar">{{ displayName.slice(0, 1).toUpperCase() }}</span>
+                {{ displayName }}
               </span>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -42,10 +42,14 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { auth } from './auth.js'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+
+// 展示名:nickname 优先,未设置时回退用户名(本地缓存的旧登录态可能无 nickname)
+const displayName = computed(() => auth.user?.nickname || auth.user?.username || '')
 
 function onUserCommand(cmd) {
   if (cmd === 'logout') {

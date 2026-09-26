@@ -40,6 +40,8 @@ toys:
   jwt:
     secret: toys-video-dev-secret-key-change-me-in-prod!
     ttl-seconds: 604800
+  user:
+    bloom-capacity: 100000
 
 management:
   endpoints:

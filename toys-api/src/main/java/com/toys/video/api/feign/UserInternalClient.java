@@ -17,6 +17,11 @@ public interface UserInternalClient {
     @GetMapping("/batch")
     R<List<UserBrief>> batch(@RequestParam("ids") List<Long> ids);
 
-    record UserBrief(Long id, String username) {
+    record UserBrief(Long id, String username, String nickname) {
+
+        /** 不关心昵称时的构造,视为未设置昵称。 */
+        public UserBrief(Long id, String username) {
+            this(id, username, null);
+        }
     }
 }

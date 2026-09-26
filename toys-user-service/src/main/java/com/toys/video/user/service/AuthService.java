@@ -38,6 +38,7 @@ public class AuthService implements ApplicationRunner {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final LoginGuard loginGuard;
+    private final UsernameBloomService usernameBloom;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
     @org.springframework.beans.factory.annotation.Value("${toys.jwt.ttl-seconds:604800}")
     private long jwtTtlSeconds;
@@ -45,6 +46,12 @@ public class AuthService implements ApplicationRunner {
 
     public LoginResponse register(RegisterRequest req, String clientIp) {
         checkRegisterAllowed(clientIp);
+        // 布隆快路径:false 必然未占用,跳过 DB 查询;true 仍查 DB 确认,唯一约束是最终兜底
+        if (usernameBloom.mightContain(req.username())
+                && userMapper.selectCount(new LambdaQueryWrapper<User>()
+                        .eq(User::getUsername, req.username())) > 0) {
+            throw BizException.of(ErrorCode.USERNAME_TAKEN);
+        }
         User user = new User();
         user.setUsername(req.username());
         user.setPasswordHash(passwordEncoder.encode(req.password()));
@@ -54,6 +61,7 @@ public class AuthService implements ApplicationRunner {
         } catch (DuplicateKeyException e) {
             throw BizException.of(ErrorCode.USERNAME_TAKEN);
         }
+        usernameBloom.add(user.getUsername());
         String token = jwtUtil.issue(user.getId(), user.getRole());
         registerToken(token);
         return new LoginResponse(token, toInfo(user));
@@ -110,6 +118,23 @@ public class AuthService implements ApplicationRunner {
         }
     }
 
+    /** 编辑资料:仅登录本人;nickname/avatar 传 null 表示不修改,非 null 则覆盖(空串视为清空)。 */
+    public UserInfo updateProfile(Long userId, String nickname, String avatar) {
+        if (userMapper.selectById(userId) == null) {
+            throw BizException.of(ErrorCode.NOT_FOUND);
+        }
+        User update = new User();
+        update.setId(userId);
+        if (nickname != null) {
+            update.setNickname(nickname);
+        }
+        if (avatar != null) {
+            update.setAvatar(avatar);
+        }
+        userMapper.updateById(update);
+        return me(userId);
+    }
+
     public UserInfo me(Long userId) {
         User user = userMapper.selectById(userId);
         if (user == null) {
@@ -131,6 +156,7 @@ public class AuthService implements ApplicationRunner {
         admin.setPasswordHash(passwordEncoder.encode(SEED_ADMIN_PASSWORD));
         admin.setRole("ADMIN");
         userMapper.insert(admin);
+        usernameBloom.add(SEED_ADMIN_USERNAME);
         log.info("seeded admin account '{}'", SEED_ADMIN_USERNAME);
     }
 
@@ -150,7 +176,7 @@ public class AuthService implements ApplicationRunner {
     }
 
     private UserInfo toInfo(User user) {
-        return new UserInfo(user.getId(), user.getUsername(), user.getRole());
+        return new UserInfo(user.getId(), user.getUsername(), user.getNickname(), user.getAvatar(), user.getRole());
     }
 
     /** 注册防刷窗口:起点与窗口内尝试次数。 */

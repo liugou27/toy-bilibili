@@ -48,8 +48,10 @@ public class CommentService {
         comment.setContent(validateContent(content));
         comment.setCreatedAt(LocalDateTime.now());
         commentMapper.insert(comment);
-        return new CommentItem(comment.getId(), userId,
-                usernameOf(userId), comment.getContent(), comment.getCreatedAt());
+        UserInternalClient.UserBrief author = fetchUsers(List.of(userId)).getOrDefault(userId,
+                new UserInternalClient.UserBrief(userId, "用户" + userId));
+        return new CommentItem(comment.getId(), userId, author.username(), author.nickname(),
+                comment.getContent(), comment.getCreatedAt());
     }
 
     /** 评论分页:按发表时间倒序,公开可读。 */
@@ -58,11 +60,15 @@ public class CommentService {
                 new LambdaQueryWrapper<Comment>()
                         .eq(Comment::getVideoId, videoId)
                         .orderByDesc(Comment::getCreatedAt));
-        Map<Long, String> names = fetchUserNames(p.getRecords().stream()
+        Map<Long, UserInternalClient.UserBrief> users = fetchUsers(p.getRecords().stream()
                 .map(Comment::getUserId).distinct().toList());
         List<CommentItem> items = p.getRecords().stream()
-                .map(c -> new CommentItem(c.getId(), c.getUserId(),
-                        names.get(c.getUserId()), c.getContent(), c.getCreatedAt()))
+                .map(c -> {
+                    UserInternalClient.UserBrief author = users.getOrDefault(c.getUserId(),
+                            new UserInternalClient.UserBrief(c.getUserId(), "用户" + c.getUserId()));
+                    return new CommentItem(c.getId(), c.getUserId(), author.username(), author.nickname(),
+                            c.getContent(), c.getCreatedAt());
+                })
                 .toList();
         return new PageResult<>(items, p.getTotal(), p.getCurrent(), p.getSize());
     }
@@ -106,18 +112,16 @@ public class CommentService {
         }
     }
 
-    private String usernameOf(Long userId) {
-        return fetchUserNames(List.of(userId)).getOrDefault(userId, "用户" + userId);
-    }
-
-    private Map<Long, String> fetchUserNames(List<Long> userIds) {
+    /** 批量取用户资料;Feign 失败时以「用户{id}」兜底,昵称视为未设置。 */
+    private Map<Long, UserInternalClient.UserBrief> fetchUsers(List<Long> userIds) {
         try {
             return userInternalClient.batch(userIds).data().stream()
                     .collect(Collectors.toMap(UserInternalClient.UserBrief::id,
-                            UserInternalClient.UserBrief::username, (a, b) -> a));
+                            Function.identity(), (a, b) -> a));
         } catch (Exception e) {
             log.warn("fetch user names failed: {}", e.getMessage());
-            return userIds.stream().collect(Collectors.toMap(Function.identity(), id -> "用户" + id, (a, b) -> a));
+            return userIds.stream().collect(Collectors.toMap(Function.identity(),
+                    id -> new UserInternalClient.UserBrief(id, "用户" + id), (a, b) -> a));
         }
     }
 }

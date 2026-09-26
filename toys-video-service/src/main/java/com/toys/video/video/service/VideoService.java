@@ -17,6 +17,10 @@ import com.toys.video.video.discovery.search.SearchGateway;
 import com.toys.video.video.dto.VideoCard;
 import com.toys.video.video.dto.VideoDetail;
 import com.toys.video.video.entity.Video;
+import com.toys.video.video.entity.VideoFavorite;
+import com.toys.video.video.entity.VideoHistory;
+import com.toys.video.video.mapper.VideoFavoriteMapper;
+import com.toys.video.video.mapper.VideoHistoryMapper;
 import com.toys.video.video.mapper.VideoMapper;
 import com.toys.video.video.mq.VideoEventPublisher;
 import io.minio.PutObjectArgs;
@@ -33,6 +37,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -49,7 +54,11 @@ public class VideoService {
     private static final long MAX_FILE_SIZE = 2L * 1024 * 1024 * 1024;
 
     private final VideoMapper videoMapper;
+    private final VideoFavoriteMapper favoriteMapper;
+    private final VideoHistoryMapper historyMapper;
     private final VideoEventPublisher eventPublisher;
+    private final InteractionService interactionService;
+    private final HistoryService historyService;
     private final io.minio.MinioClient minioClient;
     private final SearchGateway searchGateway;
     private final RecommendGateway recommendGateway;
@@ -169,7 +178,7 @@ public class VideoService {
         if (!VideoStatus.PUBLISHED.name().equals(video.getStatus()) && !ownerOrAdmin) {
             throw BizException.of(ErrorCode.VIDEO_NOT_PUBLISHED);
         }
-        return toDetail(video, ownerOrAdmin ? video.getOwnerId() : null);
+        return toDetail(video, requesterId);
     }
 
     public PageResult<VideoCard> mine(Long ownerId, long page, long size) {
@@ -178,6 +187,42 @@ public class VideoService {
                         .eq(Video::getOwnerId, ownerId)
                         .orderByDesc(Video::getCreatedAt));
         return toCards(p);
+    }
+
+    /** 我的收藏:按收藏时间倒序。 */
+    public PageResult<VideoCard> favoritePage(Long userId, long page, long size) {
+        IPage<VideoFavorite> p = favoriteMapper.selectPage(new Page<>(page, size),
+                new LambdaQueryWrapper<VideoFavorite>()
+                        .eq(VideoFavorite::getUserId, userId)
+                        .orderByDesc(VideoFavorite::getCreatedAt));
+        Map<Long, Video> videos = videosByIds(p.getRecords().stream().map(VideoFavorite::getVideoId).toList());
+        List<Video> ordered = p.getRecords().stream()
+                .map(f -> videos.get(f.getVideoId()))
+                .filter(Objects::nonNull)
+                .toList();
+        return toCards(ordered, p.getTotal(), p.getCurrent(), p.getSize());
+    }
+
+    /** 我的播放历史:按最近观看倒序,卡片带断点位置。 */
+    public PageResult<VideoCard> historyPage(Long userId, long page, long size) {
+        IPage<VideoHistory> p = historyMapper.selectPage(new Page<>(page, size),
+                new LambdaQueryWrapper<VideoHistory>()
+                        .eq(VideoHistory::getUserId, userId)
+                        .orderByDesc(VideoHistory::getUpdatedAt));
+        Map<Long, Video> videos = videosByIds(p.getRecords().stream().map(VideoHistory::getVideoId).toList());
+        Map<Long, Double> positions = p.getRecords().stream()
+                .collect(Collectors.toMap(VideoHistory::getVideoId, VideoHistory::getPositionSec, (a, b) -> a));
+        List<Video> ordered = p.getRecords().stream()
+                .map(h -> videos.get(h.getVideoId()))
+                .filter(Objects::nonNull)
+                .toList();
+        PageResult<VideoCard> cards = toCards(ordered, p.getTotal(), p.getCurrent(), p.getSize());
+        List<VideoCard> withPosition = cards.list().stream()
+                .map(c -> new VideoCard(c.id(), c.title(), c.poster(), c.durationSec(), c.playCount(),
+                        c.ownerId(), c.ownerName(), c.status(), c.note(), c.publishedAt(),
+                        positions.get(c.id())))
+                .toList();
+        return new PageResult<>(withPosition, cards.total(), cards.page(), cards.size());
     }
 
     /** 机审/转码服务请求推进状态机; UNDER_REVIEW→APPROVED 会同步发出转码事件。 */
@@ -267,6 +312,9 @@ public class VideoService {
         }
         removePrefix(MinioConfig.BUCKET_HLS, video.getId() + "/");
         videoMapper.deleteById(id);
+        // 级联清理互动数据:点赞/收藏/播放历史
+        interactionService.deleteByVideo(id);
+        historyService.deleteByVideo(id);
         evictListCache();
         log.info("video {} deleted by user {}", id, requesterId);
     }
@@ -651,14 +699,27 @@ public class VideoService {
     }
 
     private PageResult<VideoCard> toCards(IPage<Video> p) {
-        List<Long> ownerIds = p.getRecords().stream().map(Video::getOwnerId).distinct().toList();
+        return toCards(p.getRecords(), p.getTotal(), p.getCurrent(), p.getSize());
+    }
+
+    /** 按给定顺序组装卡片并填充 up 主昵称(收藏/历史列表复用)。 */
+    private PageResult<VideoCard> toCards(List<Video> videos, long total, long page, long size) {
+        List<Long> ownerIds = videos.stream().map(Video::getOwnerId).distinct().toList();
         Map<Long, String> names = ownerIds.isEmpty() ? Map.of() : fetchOwnerNames(ownerIds);
-        List<VideoCard> cards = p.getRecords().stream()
+        List<VideoCard> cards = videos.stream()
                 .map(v -> new VideoCard(v.getId(), v.getTitle(), posterOf(v), v.getDurationSec(),
                         v.getPlayCount(), v.getOwnerId(), names.get(v.getOwnerId()),
                         v.getStatus(), v.getNote(), v.getPublishedAt()))
                 .toList();
-        return new PageResult<>(cards, p.getTotal(), p.getCurrent(), p.getSize());
+        return new PageResult<>(cards, total, page, size);
+    }
+
+    private Map<Long, Video> videosByIds(List<Long> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return videoMapper.selectList(new LambdaQueryWrapper<Video>().in(Video::getId, ids)).stream()
+                .collect(Collectors.toMap(Video::getId, Function.identity(), (a, b) -> a));
     }
 
     private Map<Long, String> fetchOwnerNames(List<Long> ownerIds) {
@@ -675,11 +736,17 @@ public class VideoService {
     private VideoDetail toDetail(Video v, Long requesterId) {
         boolean published = VideoStatus.PUBLISHED.name().equals(v.getStatus());
         String ownerName = fetchOwnerNames(List.of(v.getOwnerId())).getOrDefault(v.getOwnerId(), "用户" + v.getOwnerId());
+        // 登录用户才查互动状态;断点续播位置是每个登录用户自己的历史
+        boolean liked = requesterId != null && interactionService.likedByMe(v.getId(), requesterId);
+        boolean favorited = requesterId != null && interactionService.favoritedByMe(v.getId(), requesterId);
+        Double resumePosition = requesterId != null
+                ? historyService.positionOf(v.getId(), requesterId) : null;
         return new VideoDetail(v.getId(), v.getTitle(), v.getDescription(), posterOf(v),
                 published ? "/media/hls/" + v.getId() + "/master.m3u8" : null,
                 v.getDurationSec(), v.getPlayCount(), v.getOwnerId(), ownerName,
                 v.getStatus(), v.getNote(), v.getOriginalFilename(), v.getSizeBytes(),
-                v.getCreatedAt(), v.getPublishedAt());
+                v.getCreatedAt(), v.getPublishedAt(),
+                liked, v.getLikeCount(), favorited, resumePosition);
     }
 
     private String posterOf(Video v) {

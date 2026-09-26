@@ -1,6 +1,10 @@
 package com.toys.video.user.controller;
 
 import com.toys.video.common.api.R;
+import com.toys.video.common.context.UserContext;
+import com.toys.video.common.exception.BizException;
+import com.toys.video.common.exception.ErrorCode;
+import com.toys.video.user.dto.ChangePasswordRequest;
 import com.toys.video.user.dto.LoginRequest;
 import com.toys.video.user.dto.LoginResponse;
 import com.toys.video.user.dto.RegisterRequest;
@@ -35,6 +39,20 @@ public class AuthController {
         if (authorization != null && authorization.startsWith("Bearer ")) {
             authService.logout(authorization.substring(7));
         }
+        return R.ok();
+    }
+
+    /** 修改密码:需登录,成功后当前 token 立即失效,前端跳转登录页。 */
+    @PostMapping("/password")
+    public R<Void> changePassword(@Valid @RequestBody ChangePasswordRequest req,
+                                  @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = UserContext.userId();
+        if (userId == null) {
+            throw BizException.of(ErrorCode.UNAUTHORIZED);
+        }
+        String token = authorization != null && authorization.startsWith("Bearer ")
+                ? authorization.substring(7) : null;
+        authService.changePassword(userId, req.oldPassword(), req.newPassword(), token);
         return R.ok();
     }
 

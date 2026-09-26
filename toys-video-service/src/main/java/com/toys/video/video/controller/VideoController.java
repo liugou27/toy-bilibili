@@ -9,6 +9,7 @@ import com.toys.video.video.dto.InitUploadResponse;
 import com.toys.video.video.dto.UploadResponse;
 import com.toys.video.video.dto.VideoCard;
 import com.toys.video.video.dto.VideoDetail;
+import com.toys.video.video.service.InteractionService;
 import com.toys.video.video.service.PlayCountService;
 import com.toys.video.video.service.VideoService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,6 +32,7 @@ public class VideoController {
 
     private final VideoService videoService;
     private final PlayCountService playCountService;
+    private final InteractionService interactionService;
 
     /** 上传(multipart):file + title + description。小文件一步上传。 */
     @PostMapping
@@ -94,6 +96,36 @@ public class VideoController {
     public R<Void> play(@PathVariable Long id, HttpServletRequest request) {
         playCountService.recordPlay(id, PlayCountService.clientKeyOf(
                 request.getHeader("X-Forwarded-For"), request.getRemoteAddr(), UserContext.userId()));
+        return R.ok();
+    }
+
+    // ==================== 点赞 / 收藏 ====================
+
+    /** 点赞:重复点赞幂等。 */
+    @PostMapping("/{id}/like")
+    public R<Void> like(@PathVariable Long id) {
+        interactionService.like(id, requireUser());
+        return R.ok();
+    }
+
+    /** 取消点赞:未点赞时幂等无操作。 */
+    @DeleteMapping("/{id}/like")
+    public R<Void> unlike(@PathVariable Long id) {
+        interactionService.unlike(id, requireUser());
+        return R.ok();
+    }
+
+    /** 收藏:重复收藏幂等。 */
+    @PostMapping("/{id}/favorite")
+    public R<Void> favorite(@PathVariable Long id) {
+        interactionService.favorite(id, requireUser());
+        return R.ok();
+    }
+
+    /** 取消收藏:未收藏时幂等无操作。 */
+    @DeleteMapping("/{id}/favorite")
+    public R<Void> unfavorite(@PathVariable Long id) {
+        interactionService.unfavorite(id, requireUser());
         return R.ok();
     }
 

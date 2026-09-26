@@ -83,6 +83,22 @@ public class AuthService implements ApplicationRunner {
         }
     }
 
+    /** 修改密码:校验旧密码,更新后注销当前 token,强制重新登录。 */
+    public void changePassword(Long userId, String oldPassword, String newPassword, String currentToken) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw BizException.of(ErrorCode.NOT_FOUND);
+        }
+        if (!passwordEncoder.matches(oldPassword, user.getPasswordHash())) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "原密码不正确");
+        }
+        User update = new User();
+        update.setId(userId);
+        update.setPasswordHash(passwordEncoder.encode(newPassword));
+        userMapper.updateById(update);
+        logout(currentToken);
+    }
+
     /** 登记签发的 token(jti 白名单,TTL 与 token 剩余寿命一致)。 */
     private void registerToken(String token) {
         try {

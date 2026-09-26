@@ -39,6 +39,8 @@ public class Video {
 
     private Long playCount;
 
+    private Long likeCount;
+
     /** 拒绝原因 / 转码错误,展示给投稿人。 */
     private String note;
 

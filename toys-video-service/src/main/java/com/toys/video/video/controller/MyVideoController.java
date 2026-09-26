@@ -22,11 +22,22 @@ public class MyVideoController {
     @GetMapping
     public R<PageResult<VideoCard>> mine(@RequestParam(defaultValue = "1") long page,
                                          @RequestParam(defaultValue = "20") long size) {
+        return R.ok(videoService.mine(requireUser(), page, Math.min(size, 50)));
+    }
+
+    /** 我的收藏:按收藏时间倒序。 */
+    @GetMapping("/favorites")
+    public R<PageResult<VideoCard>> favorites(@RequestParam(defaultValue = "1") long page,
+                                              @RequestParam(defaultValue = "20") long size) {
+        return R.ok(videoService.favoritePage(requireUser(), page, Math.min(size, 50)));
+    }
+
+    private Long requireUser() {
         Long userId = UserContext.userId();
         if (userId == null) {
             throw new com.toys.video.common.exception.BizException(
                     com.toys.video.common.exception.ErrorCode.UNAUTHORIZED);
         }
-        return R.ok(videoService.mine(userId, page, Math.min(size, 50)));
+        return userId;
     }
 }

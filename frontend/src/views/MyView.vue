@@ -30,6 +30,22 @@
           <div class="row-actions">
             <el-button v-if="row.status === 'PUBLISHED'" text type="primary"
                        @click="$router.push(`/watch/${row.id}`)">查看</el-button>
+            <el-popover :ref="(el) => setPopRef(row.id, el)" placement="bottom-end" :width="320"
+                        trigger="click" @show="openEdit(row)">
+              <template #reference>
+                <el-button text type="primary">编辑</el-button>
+              </template>
+              <div v-loading="descLoading" class="edit-form">
+                <el-input v-model="editForm.title" maxlength="100" show-word-limit placeholder="标题" />
+                <el-input v-model="editForm.description" type="textarea" :rows="3" maxlength="2000"
+                          show-word-limit placeholder="简介(选填)" />
+                <div class="edit-actions">
+                  <el-button size="small" @click="cancelEdit(row.id)">取消</el-button>
+                  <el-button size="small" type="primary" :loading="saving" @click="saveEdit">保存</el-button>
+                </div>
+              </div>
+            </el-popover>
+            <el-button text type="danger" :loading="deleting === row.id" @click="remove(row)">删除</el-button>
             <el-button v-if="row.status === 'TRANSCODE_FAILED'" size="small" round
                        :loading="retrying === row.id" @click="retry(row.id)">重试转码</el-button>
           </div>
@@ -40,8 +56,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '../api.js'
 
 const TERMINAL = new Set(['PUBLISHED', 'REJECTED'])
@@ -77,6 +93,80 @@ async function retry(id) {
     load()
   } finally {
     retrying.value = null
+  }
+}
+
+// —— 编辑 / 删除 ——
+const popRefs = new Map()
+const saving = ref(false)
+const descLoading = ref(false)
+const deleting = ref(null)
+const editingId = ref(null)
+const editForm = reactive({ title: '', description: '' })
+
+function setPopRef(id, el) {
+  if (el) popRefs.set(id, el)
+  else popRefs.delete(id)
+}
+
+function openEdit(row) {
+  editingId.value = row.id
+  editForm.title = row.title
+  editForm.description = ''
+  descLoading.value = true
+  // 列表接口不含简介,打开时拉取详情补齐,避免保存时误清空
+  http.get(`/videos/${row.id}`)
+    .then((d) => {
+      if (editingId.value === row.id) editForm.description = d.description || ''
+    })
+    .catch(() => {})
+    .finally(() => {
+      descLoading.value = false
+    })
+}
+
+function cancelEdit(id) {
+  popRefs.get(id)?.hide()
+  editingId.value = null
+}
+
+async function saveEdit() {
+  if (!editForm.title.trim()) {
+    ElMessage.warning('标题不能为空')
+    return
+  }
+  saving.value = true
+  try {
+    await http.patch(`/videos/${editingId.value}`, {
+      title: editForm.title.trim(),
+      description: editForm.description.trim()
+    })
+    ElMessage.success('已保存')
+    popRefs.get(editingId.value)?.hide()
+    editingId.value = null
+    load()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function remove(row) {
+  try {
+    await ElMessageBox.confirm(`确定删除「${row.title}」吗?删除后不可恢复。`, '删除投稿', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  deleting.value = row.id
+  try {
+    await http.delete(`/videos/${row.id}`)
+    ElMessage.success('已删除')
+    load()
+  } finally {
+    deleting.value = null
   }
 }
 
@@ -141,6 +231,9 @@ function dotClass(s) {
 .muted { color: var(--text-tertiary); }
 
 .row-actions { flex: none; }
+
+.edit-form { display: flex; flex-direction: column; gap: 10px; }
+.edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
 .dot-green { background: var(--success); }

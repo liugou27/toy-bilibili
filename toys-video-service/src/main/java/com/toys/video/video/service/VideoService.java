@@ -65,6 +65,8 @@ public class VideoService {
     private final SearchGateway searchGateway;
     private final RecommendGateway recommendGateway;
     private final UserInternalClient userInternalClient;
+    private final com.toys.video.api.feign.ModerationInternalClient moderationInternalClient;
+    private final com.toys.video.api.feign.TranscodeInternalClient transcodeInternalClient;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
@@ -320,6 +322,17 @@ public class VideoService {
         commentService.deleteByVideo(id);
         danmakuService.deleteByVideo(id);
         evictListCache();
+        // 跨服务孤儿数据清理:失败仅告警,不影响删除结果
+        try {
+            moderationInternalClient.purgeReports(id);
+        } catch (Exception e) {
+            log.warn("purge moderation reports failed for video {}: {}", id, e.getMessage());
+        }
+        try {
+            transcodeInternalClient.purgeJobs(id);
+        } catch (Exception e) {
+            log.warn("purge transcode jobs failed for video {}: {}", id, e.getMessage());
+        }
         log.info("video {} deleted by user {}", id, requesterId);
     }
 

@@ -119,11 +119,22 @@ public class ModerationService {
         if (report == null) {
             throw BizException.of(ErrorCode.NOT_FOUND, "机审报告不存在");
         }
-        String presigned = videoInternalClient.presign(videoId, 900).data();
-        return Map.of(
-                "report", report,
-                "presignedUrl", presigned
-        );
+        var presignResp = videoInternalClient.presign(videoId, 900);
+        // 视频已被删除等场景:明确报错而非 NPE
+        if (presignResp == null || presignResp.code() != 0 || presignResp.data() == null) {
+            throw BizException.of(ErrorCode.NOT_FOUND, "视频不存在或已删除");
+        }
+        Map<String, Object> result = new java.util.HashMap<>();
+        result.put("report", report);
+        result.put("presignedUrl", presignResp.data());
+        return result;
+    }
+
+    /** 视频删除后清理其审核报告(孤儿数据治理)。 */
+    public void purgeByVideo(Long videoId) {
+        int rows = reportMapper.delete(new LambdaQueryWrapper<ModerationReport>()
+                .eq(ModerationReport::getVideoId, videoId));
+        log.info("purged {} moderation reports for deleted video {}", rows, videoId);
     }
 
     /** 审核动作前置校验:视频状态已被他人推进时直接拒绝,避免报告已改而状态回写失败的不一致。 */

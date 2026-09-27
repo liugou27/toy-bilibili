@@ -1,0 +1,348 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "toys-video 后端架构 — 微服务视频平台",
+    "locale": "zh-CN",
+    "quality_profile": "standard",
+    "viewBox": [
+      1100,
+      480
+    ]
+  },
+  "components": [
+    {
+      "id": "nacos",
+      "type": "cloud",
+      "label": "Nacos",
+      "sublabel": "注册+配置(全服务)",
+      "pos": [
+        465,
+        30
+      ],
+      "size": [
+        130,
+        52
+      ]
+    },
+    {
+      "id": "rocketmq",
+      "type": "messagebus",
+      "label": "RocketMQ",
+      "sublabel": "上传/审核事件",
+      "pos": [
+        700,
+        30
+      ],
+      "size": [
+        130,
+        52
+      ]
+    },
+    {
+      "id": "minio",
+      "type": "database",
+      "label": "MinIO",
+      "sublabel": "videos/hls 桶",
+      "pos": [
+        920,
+        30
+      ],
+      "size": [
+        130,
+        52
+      ]
+    },
+    {
+      "id": "web",
+      "type": "external",
+      "label": "Vue3 前端",
+      "sublabel": "Vite + hls.js",
+      "pos": [
+        10,
+        160
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "backend",
+      "label": "Gateway",
+      "sublabel": ":8080 JWT/限流",
+      "pos": [
+        240,
+        160
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "video",
+      "type": "backend",
+      "label": "video-service",
+      "sublabel": ":8102 上传/状态机/搜推",
+      "pos": [
+        450,
+        160
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "moderation",
+      "type": "backend",
+      "label": "moderation",
+      "sublabel": ":8103 机审/人工审核",
+      "pos": [
+        690,
+        160
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "media",
+      "type": "backend",
+      "label": "media-service",
+      "sublabel": ":8104 转码 worker",
+      "pos": [
+        910,
+        160
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "白名单/限流/计数",
+      "pos": [
+        10,
+        360
+      ],
+      "size": [
+        140,
+        52
+      ]
+    },
+    {
+      "id": "user",
+      "type": "backend",
+      "label": "user-service",
+      "sublabel": ":8101 账号/资料",
+      "pos": [
+        240,
+        360
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "4 schema 隔离",
+      "pos": [
+        450,
+        360
+      ],
+      "size": [
+        160,
+        56
+      ]
+    },
+    {
+      "id": "scripts",
+      "type": "external",
+      "label": "Python/ffmpeg",
+      "sublabel": "机审+转码",
+      "pos": [
+        915,
+        360
+      ],
+      "size": [
+        140,
+        56
+      ]
+    }
+  ],
+  "boundaries": [],
+  "connections": [
+    {
+      "id": "web-gw",
+      "from": "web",
+      "to": "gateway",
+      "label": "HTTP",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gw-video",
+      "from": "gateway",
+      "to": "video",
+      "label": "路由"
+    },
+    {
+      "id": "mod-video",
+      "from": "moderation",
+      "to": "video",
+      "variant": "dashed"
+    },
+    {
+      "id": "gw-user",
+      "from": "gateway",
+      "to": "user"
+    },
+    {
+      "id": "user-redis",
+      "from": "user",
+      "to": "redis",
+      "label": "jti"
+    },
+    {
+      "id": "user-db",
+      "from": "user",
+      "to": "postgres"
+    },
+    {
+      "id": "video-nacos",
+      "from": "video",
+      "to": "nacos"
+    },
+    {
+      "id": "video-db",
+      "from": "video",
+      "to": "postgres"
+    },
+    {
+      "id": "mq-mod",
+      "from": "rocketmq",
+      "to": "moderation",
+      "label": "消费",
+      "labelDy": 55
+    },
+    {
+      "id": "media-minio",
+      "from": "media",
+      "to": "minio"
+    },
+    {
+      "id": "media-py",
+      "from": "media",
+      "to": "scripts"
+    },
+    {
+      "id": "video-mq",
+      "from": "video",
+      "to": "rocketmq",
+      "label": "事件",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "via": [
+        [
+          530,
+          118
+        ],
+        [
+          765,
+          118
+        ]
+      ]
+    },
+    {
+      "id": "mq-media",
+      "from": "rocketmq",
+      "to": "media",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          865,
+          56
+        ],
+        [
+          865,
+          120
+        ],
+        [
+          985,
+          120
+        ]
+      ]
+    },
+    {
+      "id": "mod-db",
+      "from": "moderation",
+      "to": "postgres",
+      "fromSide": "left",
+      "toSide": "right",
+      "via": [
+        [
+          650,
+          192
+        ],
+        [
+          650,
+          388
+        ]
+      ]
+    },
+    {
+      "id": "mod-py",
+      "from": "moderation",
+      "to": "scripts",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          765,
+          330
+        ],
+        [
+          880,
+          330
+        ],
+        [
+          880,
+          388
+        ]
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "核心链路(事件驱动)",
+      "items": [
+        "上传:分片直传 MinIO(预签名)→ 秒传/断点续传 → VIDEO_UPLOADED 事件",
+        "机审:画面规则 + DFA 敏感词(REJECT/REVIEW 分级,词库热更新)",
+        "人工:审核认领软锁 → 决策硬锁 → VIDEO_APPROVED 事件",
+        "转码:虚拟线程 + ffmpeg HLS 多码率 → PUBLISHED",
+        "播放:网关代理 MinIO HLS;Artplayer + 弹幕插件"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "未画出的交互(详见技术文档)",
+      "items": [
+        "网关→moderation/media 路由与 /media 代理;media→video Feign 回写",
+        "video→MinIO 分片直传/秒传;moderation→MinIO 拉原片机审",
+        "video→Redis 列表缓存/播放计数;全部服务注册/配置于 Nacos",
+        "MQ 重试+死信;布隆过滤器;跨服务删除级联清理"
+      ]
+    }
+  ]
+}

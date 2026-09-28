@@ -1,10 +1,12 @@
 package com.toys.video.video.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.toys.video.api.enums.VideoStatus;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.video.dto.DanmakuItem;
 import com.toys.video.video.entity.Danmaku;
+import com.toys.video.video.entity.Video;
 import com.toys.video.video.mapper.DanmakuMapper;
 import com.toys.video.video.mapper.VideoMapper;
 import com.toys.video.video.text.SensitiveWordHolder;
@@ -49,8 +51,9 @@ public class DanmakuService {
         return new DanmakuItem(danmaku.getId(), danmaku.getTimeSec(), danmaku.getContent());
     }
 
-    /** 全量弹幕:按播放位置正序,上限 2000 条。 */
+    /** 全量弹幕:按播放位置正序,上限 2000 条;仅已发布视频可读,防泄漏未发布内容。 */
     public List<DanmakuItem> list(Long videoId) {
+        requireVideo(videoId);
         return danmakuMapper.selectList(new LambdaQueryWrapper<Danmaku>()
                         .eq(Danmaku::getVideoId, videoId)
                         .orderByAsc(Danmaku::getTimeSec)
@@ -81,9 +84,14 @@ public class DanmakuService {
         return trimmed;
     }
 
+    /** 弹幕前提:视频存在且已发布;未发布视频不可发/读弹幕。 */
     private void requireVideo(Long videoId) {
-        if (videoMapper.selectById(videoId) == null) {
+        Video video = videoMapper.selectById(videoId);
+        if (video == null) {
             throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
+        }
+        if (!VideoStatus.PUBLISHED.name().equals(video.getStatus())) {
+            throw BizException.of(ErrorCode.VIDEO_NOT_PUBLISHED);
         }
     }
 }

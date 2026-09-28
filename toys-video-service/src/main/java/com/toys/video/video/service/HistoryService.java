@@ -2,6 +2,7 @@ package com.toys.video.video.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.toys.video.api.enums.VideoStatus;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.video.entity.Video;
@@ -27,14 +28,12 @@ public class HistoryService {
     private final VideoHistoryMapper historyMapper;
     private final VideoMapper videoMapper;
 
-    /** 上报播放进度:upsert(先查后写,唯一键兜底并发插入);负数进度按 0 处理。 */
+    /** 上报播放进度:upsert(先查后写,唯一键兜底并发插入);负数进度按 0 处理;仅已发布视频可上报。 */
     public void savePosition(Long videoId, Long userId, Double position) {
         if (position == null) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "进度不能为空");
         }
-        if (videoMapper.selectById(videoId) == null) {
-            throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
-        }
+        requirePublished(videoId);
         double pos = normalizePosition(position);
         VideoHistory existing = historyMapper.selectOne(new LambdaQueryWrapper<VideoHistory>()
                 .eq(VideoHistory::getUserId, userId)
@@ -55,7 +54,8 @@ public class HistoryService {
         }
     }
 
-    /** 我的续播位置:无记录返回 null。 */
+    /** 我的续播位置:无记录返回 null;仅已发布视频可查询。 */
+    /** 按 (video,user) 纯读续播位:详情装配(owner 预览未发布视频)也走这里,不做发布门槛。 */
     public Double positionOf(Long videoId, Long userId) {
         if (userId == null) {
             return null;
@@ -72,9 +72,20 @@ public class HistoryService {
                 .eq(VideoHistory::getVideoId, videoId));
     }
 
-    /** 进度归一:负数按 0 处理。 */
+    /** 进度归一:负数及 NaN/Infinity 等非有限值按 0 处理。 */
     static double normalizePosition(double position) {
-        return position < 0 ? 0d : position;
+        return Double.isFinite(position) && position > 0d ? position : 0d;
+    }
+
+    /** 播放历史前提:视频存在且已发布,不存在→VIDEO_NOT_FOUND,未发布→VIDEO_NOT_PUBLISHED。 */
+    private void requirePublished(Long videoId) {
+        Video video = videoMapper.selectById(videoId);
+        if (video == null) {
+            throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
+        }
+        if (!VideoStatus.PUBLISHED.name().equals(video.getStatus())) {
+            throw BizException.of(ErrorCode.VIDEO_NOT_PUBLISHED);
+        }
     }
 
     private LambdaUpdateWrapper<VideoHistory> updateWrapper(Long userId, Long videoId, double position) {

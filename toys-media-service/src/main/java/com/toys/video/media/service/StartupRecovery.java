@@ -19,11 +19,19 @@ import java.util.List;
 @RequiredArgsConstructor
 public class StartupRecovery implements ApplicationRunner {
 
+    /** 单实例假设:多实例部署时新实例会误回收其他实例的 RUNNING 作业,需改为实例认领制。 */
+    private static final boolean SINGLE_INSTANCE_ASSUMED = true;
+    private static final long ORPHAN_DIR_AGE_MS = 3600_000L;
+
     private final TranscodeJobMapper jobMapper;
     private final VideoInternalClient videoInternalClient;
 
     @Override
     public void run(ApplicationArguments args) {
+        sweepOrphanTempDirs();
+        if (!SINGLE_INSTANCE_ASSUMED) {
+            return;
+        }
         List<TranscodeJob> running = jobMapper.selectList(new LambdaQueryWrapper<TranscodeJob>()
                 .eq(TranscodeJob::getStatus, "RUNNING"));
         for (TranscodeJob job : running) {
@@ -50,6 +58,33 @@ public class StartupRecovery implements ApplicationRunner {
             }
         } catch (Exception e) {
             log.warn("startup recovery callback failed for video {}", videoId, e);
+        }
+    }
+
+    /** 清扫进程崩溃残留的 transcode-* 临时目录(超过 1 小时,防误删并行实例)。 */
+    private void sweepOrphanTempDirs() {
+        java.nio.file.Path tmp = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"));
+        long cutoff = System.currentTimeMillis() - ORPHAN_DIR_AGE_MS;
+        try (var stream = java.nio.file.Files.list(tmp)) {
+            stream.filter(f -> f.getFileName().toString().startsWith("transcode-"))
+                    .filter(f -> {
+                        try {
+                            return java.nio.file.Files.getLastModifiedTime(f).toMillis() < cutoff;
+                        } catch (Exception e) {
+                            return false;
+                        }
+                    })
+                    .forEach(dir -> {
+                        try (var walk = java.nio.file.Files.walk(dir)) {
+                            walk.sorted(java.util.Comparator.reverseOrder())
+                                    .forEach(p -> p.toFile().delete());
+                            log.info("swept orphan temp dir {}", dir);
+                        } catch (Exception e) {
+                            log.warn("sweep {} failed: {}", dir, e.getMessage());
+                        }
+                    });
+        } catch (Exception e) {
+            log.warn("orphan temp sweep failed: {}", e.getMessage());
         }
     }
 }

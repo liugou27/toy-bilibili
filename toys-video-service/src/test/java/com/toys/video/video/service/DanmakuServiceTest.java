@@ -58,7 +58,7 @@ class DanmakuServiceTest {
     void post_rejectsSensitiveWord() {
         danmakuService = new DanmakuService(danmakuMapper, videoMapper,
                 sensitiveWordHolder(Map.of("赌博", SensitiveWordFilter.LEVEL_REJECT)));
-        when(videoMapper.selectById(1L)).thenReturn(new Video());
+        when(videoMapper.selectById(1L)).thenReturn(publishedVideo());
         BizException e = assertThrows(BizException.class,
                 () -> danmakuService.post(1L, 42L, 10.5, "主播赌博吧"));
         assertEquals(ErrorCode.PARAM_INVALID, e.getErrorCode());
@@ -68,7 +68,7 @@ class DanmakuServiceTest {
 
     @Test
     void post_insertsWithTrimmedContent() {
-        when(videoMapper.selectById(1L)).thenReturn(new Video());
+        when(videoMapper.selectById(1L)).thenReturn(publishedVideo());
         doAnswer(inv -> {
             inv.getArgument(0, Danmaku.class).setId(100L);
             return 1;
@@ -98,5 +98,12 @@ class DanmakuServiceTest {
         String content = "弹".repeat(DanmakuService.MAX_CONTENT_LENGTH + 1);
         BizException e = assertThrows(BizException.class, () -> danmakuService.validateContent(content));
         assertEquals(ErrorCode.PARAM_INVALID, e.getErrorCode());
+    }
+
+    /** 已发布视频实体(弹幕前置条件)。 */
+    private static Video publishedVideo() {
+        Video video = new Video();
+        video.setStatus("PUBLISHED");
+        return video;
     }
 }

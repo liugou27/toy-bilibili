@@ -2,6 +2,7 @@ package com.toys.video.video.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.toys.video.common.exception.BizException;
 import com.toys.video.video.entity.Video;
 import com.toys.video.video.entity.VideoFavorite;
 import com.toys.video.video.entity.VideoLike;
@@ -47,7 +48,7 @@ class InteractionServiceTest {
 
     @Test
     void like_firstTimeInsertsAndIncrementsCount() {
-        when(videoMapper.selectById(1L)).thenReturn(new Video());
+        when(videoMapper.selectById(1L)).thenReturn(publishedVideo());
         interactionService.like(1L, 42L);
         verify(likeMapper).insert(any(VideoLike.class));
         verify(videoMapper).update(isNull(), any());
@@ -55,10 +56,28 @@ class InteractionServiceTest {
 
     @Test
     void like_duplicateKeyIsSilentWithoutCountChange() {
-        when(videoMapper.selectById(1L)).thenReturn(new Video());
+        when(videoMapper.selectById(1L)).thenReturn(publishedVideo());
         when(likeMapper.insert(any(VideoLike.class))).thenThrow(new DuplicateKeyException("dup"));
         interactionService.like(1L, 42L);
         verify(videoMapper, never()).update(isNull(), any());
+    }
+
+    @Test
+    void like_unpublishedVideoRejected() {
+        Video video = new Video();
+        video.setStatus("TRANSCODING");
+        when(videoMapper.selectById(1L)).thenReturn(video);
+        org.junit.jupiter.api.Assertions.assertThrows(BizException.class,
+                () -> interactionService.like(1L, 42L));
+        verify(likeMapper, never()).insert(any(VideoLike.class));
+    }
+
+    @Test
+    void like_videoMissingThrows() {
+        when(videoMapper.selectById(1L)).thenReturn(null);
+        org.junit.jupiter.api.Assertions.assertThrows(BizException.class,
+                () -> interactionService.like(1L, 42L));
+        verify(likeMapper, never()).insert(any(VideoLike.class));
     }
 
     @Test
@@ -78,5 +97,12 @@ class InteractionServiceTest {
     @Test
     void likedByMe_anonymousReturnsFalse() {
         assertFalse(interactionService.likedByMe(1L, null));
+    }
+
+    /** 已发布视频实体(互动前置条件)。 */
+    private static Video publishedVideo() {
+        Video video = new Video();
+        video.setStatus("PUBLISHED");
+        return video;
     }
 }

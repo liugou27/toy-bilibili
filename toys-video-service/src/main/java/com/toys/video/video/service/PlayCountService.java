@@ -86,7 +86,8 @@ public class PlayCountService {
         }
         for (String key : keys) {
             try {
-                String value = redis.opsForValue().getAndDelete(key);
+                // 先读值回写 DB,成功后再删缓冲 key:DB 失败保留 key 由下轮重试,避免播放量丢失
+                String value = redis.opsForValue().get(key);
                 if (value == null) {
                     continue;
                 }
@@ -95,8 +96,10 @@ public class PlayCountService {
                 videoMapper.update(null, new LambdaUpdateWrapper<Video>()
                         .eq(Video::getId, videoId)
                         .setSql("play_count = play_count + {0}", delta));
+                redis.delete(key);
             } catch (NumberFormatException e) {
                 log.warn("skip bad play count key {}", key);
+                redis.delete(key);
             } catch (Exception e) {
                 log.error("flush play count failed for {}", key, e);
             }

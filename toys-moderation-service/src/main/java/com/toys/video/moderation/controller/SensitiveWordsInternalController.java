@@ -26,12 +26,11 @@ public class SensitiveWordsInternalController {
     public R<SensitiveWordsInternalClient.SensitiveSnapshot> snapshot(
             @RequestParam("version") long version, HttpServletRequest request) {
         requireInternal(request);
-        long current = sensitiveWordService.currentVersion();
-        if (current == version) {
-            return R.ok(new SensitiveWordsInternalClient.SensitiveSnapshot(current, null));
+        var view = sensitiveWordService.currentView();
+        if (view.version() == version) {
+            return R.ok(new SensitiveWordsInternalClient.SensitiveSnapshot(view.version(), null));
         }
-        return R.ok(new SensitiveWordsInternalClient.SensitiveSnapshot(current,
-                sensitiveWordService.current().words()));
+        return R.ok(new SensitiveWordsInternalClient.SensitiveSnapshot(view.version(), view.words()));
     }
 
     private void requireInternal(HttpServletRequest request) {

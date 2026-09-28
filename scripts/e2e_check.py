@@ -95,16 +95,15 @@ def md5_file(path):
 
 
 def make_sample():
-    if os.path.exists(SAMPLE):
-        return
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+    if not os.path.exists(SAMPLE):
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
                     "-i", "testsrc2=duration=8:size=1280x720:rate=30",
                     "-f", "lavfi", "-i", "sine=frequency=440:duration=8",
                     "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
                     "-shortest", SAMPLE], check=True)
-    # 追加随机尾部,保证每轮 md5 唯一,避免历史秒传/会话干扰
+    # 每轮追加新随机尾:md5 唯一,历史秒传副本/未完成会话不再干扰断言
     with open(SAMPLE, "ab") as f:
-        f.write(os.urandom(32))
+        f.write(os.urandom(48))
 
 
 def wait_status(token, video_id, targets, timeout_s=180):
@@ -321,6 +320,8 @@ def _():
     admin = STATE.get("admin_token") or req("POST", "/api/auth/login", body={"username": "admin", "password": "admin123"})["data"]["token"]
     r = req("DELETE", f"/api/videos/{STATE['vid']}", token=admin)
     expect(r["code"] == 0, f"删除失败 {r}")
+    if "instant_vid" in STATE:
+        req("DELETE", f"/api/videos/{STATE['instant_vid']}", token=admin)
     d = req("GET", f"/api/videos/{STATE['vid']}", token=admin)
     expect(d["code"] == 2101, f"删除后详情应 2101,得到 {d['code']}")
 

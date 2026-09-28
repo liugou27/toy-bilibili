@@ -26,16 +26,19 @@ import com.toys.video.video.mapper.VideoFavoriteMapper;
 import com.toys.video.video.mapper.VideoHistoryMapper;
 import com.toys.video.video.mapper.VideoMapper;
 import com.toys.video.video.mq.VideoEventPublisher;
+import com.toys.video.video.text.SensitiveWordHolder;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import java.time.LocalDateTime;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
@@ -72,6 +75,7 @@ public class VideoService {
     private final com.toys.video.api.feign.TranscodeInternalClient transcodeInternalClient;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    private final SensitiveWordHolder sensitiveWordHolder;
 
     private static final String LIST_CACHE_PREFIX = "cache:videos:list:";
     private static final java.time.Duration LIST_CACHE_TTL = java.time.Duration.ofSeconds(60);
@@ -134,8 +138,8 @@ public class VideoService {
                     video.getId(), objectKey, ownerId, filename,
                     video.getTitle(), video.getDescription()));
         } catch (Exception e) {
-            log.error("publish VIDEO_UPLOADED failed, videoId={}, reverting status", video.getId(), e);
-            revertToUploaded(video.getId());
+            log.error("publish VIDEO_UPLOADED failed, videoId={}, discarding record", video.getId(), e);
+            discardFailedUpload(video.getId(), objectKey);
             throw new BizException(ErrorCode.INTERNAL_ERROR, "任务提交失败,请重试");
         }
         return new com.toys.video.video.dto.UploadResponse(video.getId(), video.getStatus());
@@ -190,11 +194,27 @@ public class VideoService {
     }
 
     private String listCacheKey(long page, long size, String keyword, Long userId, String category) {
-        String kw = keyword == null ? "" : keyword.trim().toLowerCase(java.util.Locale.ROOT);
+        String kw = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
         // 融合推荐结果因人而异:匿名与登录用户、不同登录用户分别缓存
         String user = userId == null ? "anon" : "u" + userId;
-        return LIST_CACHE_PREFIX + page + ":" + size + ":" + Integer.toHexString(kw.hashCode()) + ":" + user
+        return LIST_CACHE_PREFIX + page + ":" + size + ":" + sha256Hex(kw) + ":" + user
                 + ":" + (category == null ? "" : category);
+    }
+
+    /** 关键词的小写十六进制 SHA-256:避免 String.hashCode 碰撞导致不同关键词命中同一缓存。 */
+    private static String sha256Hex(String input) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest((input == null ? "" : input).getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16))
+                        .append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("JVM 缺少 SHA-256 实现", e);
+        }
     }
 
     /** 相关视频:共现为主、热度补齐;cache-aside,300s TTL。 */
@@ -258,11 +278,17 @@ public class VideoService {
         return toCards(p);
     }
 
-    /** 单个用户展示信息:batch 空回退(用户不存在)→ NOT_FOUND。 */
+    /** 单个用户展示信息:batch 空回退或 Feign 失败(用户不存在)→ NOT_FOUND。 */
     private UserInternalClient.UserBrief fetchBrief(Long userId) {
-        List<UserInternalClient.UserBrief> briefs = userInternalClient.batch(List.of(userId)).data();
+        List<UserInternalClient.UserBrief> briefs;
+        try {
+            briefs = userInternalClient.batch(List.of(userId)).data();
+        } catch (Exception e) {
+            log.warn("fetch user brief failed, userId={}: {}", userId, e.getMessage());
+            throw BizException.of(ErrorCode.NOT_FOUND, "用户不存在");
+        }
         if (briefs == null || briefs.isEmpty()) {
-            throw BizException.of(ErrorCode.NOT_FOUND);
+            throw BizException.of(ErrorCode.NOT_FOUND, "用户不存在");
         }
         return briefs.get(0);
     }
@@ -381,7 +407,18 @@ public class VideoService {
         log.info("video {} status {} -> {}", id, current, target);
         evictListCache();
         if (target == VideoStatus.APPROVED) {
-            eventPublisher.publishApproved(new VideoApprovedEvent(video.getId(), video.getObjectKey()));
+            try {
+                eventPublisher.publishApproved(new VideoApprovedEvent(video.getId(), video.getObjectKey()));
+            } catch (RuntimeException e) {
+                // 事件发布失败回退到 UNDER_REVIEW,机审可重新推进,避免视频卡死在 APPROVED
+                log.error("publish VIDEO_APPROVED failed, rollback video {} to UNDER_REVIEW", id, e);
+                videoMapper.update(null, new LambdaUpdateWrapper<Video>()
+                        .eq(Video::getId, id)
+                        .eq(Video::getStatus, VideoStatus.APPROVED.name())
+                        .set(Video::getStatus, VideoStatus.UNDER_REVIEW.name())
+                        .set(Video::getUpdatedAt, LocalDateTime.now()));
+                throw e;
+            }
         }
     }
 
@@ -398,6 +435,8 @@ public class VideoService {
         if (!VideoStatus.TRANSCODE_FAILED.name().equals(video.getStatus())) {
             throw BizException.of(ErrorCode.VIDEO_STATUS_CONFLICT);
         }
+        // 先发事件再改状态:发布失败保持 TRANSCODE_FAILED,可直接重试
+        eventPublisher.publishApproved(new VideoApprovedEvent(id, video.getObjectKey()));
         int rows = videoMapper.update(null, new LambdaUpdateWrapper<Video>()
                 .eq(Video::getId, id)
                 .eq(Video::getStatus, VideoStatus.TRANSCODE_FAILED.name())
@@ -407,7 +446,6 @@ public class VideoService {
         if (rows == 0) {
             throw BizException.of(ErrorCode.VIDEO_STATUS_CONFLICT);
         }
-        eventPublisher.publishApproved(new VideoApprovedEvent(id, video.getObjectKey()));
     }
 
     /** 删除投稿:owner 或 ADMIN,任何状态;物理删除记录并清理归属对象。 */
@@ -419,22 +457,28 @@ public class VideoService {
         if (!video.getOwnerId().equals(requesterId) && !"ADMIN".equals(requesterRole)) {
             throw BizException.of(ErrorCode.FORBIDDEN);
         }
-        // 未完成的上传会话:先清掉分片对象
-        if (VideoStatus.UPLOADED.name().equals(video.getStatus()) && video.getUploadId() != null) {
-            deleteChunks(video.getUploadId(), listUploadedPartNumbers(video));
-        }
-        // 原片被其他视频(秒传共享)引用时保留,否则一并删除
-        if (video.getObjectKey() != null && !objectKeySharedByOthers(video)) {
-            removeObject(MinioConfig.BUCKET_VIDEOS, video.getObjectKey());
-        }
-        removePrefix(MinioConfig.BUCKET_HLS, video.getId() + "/");
+        // 共享判定先行:DB 行删除后引用计数口径不变,提前计算保持语义清晰
+        boolean objectShared = video.getObjectKey() != null && objectKeySharedByOthers(video);
+        boolean hasChunkSession = VideoStatus.UPLOADED.name().equals(video.getStatus()) && video.getUploadId() != null;
+        List<Integer> chunkParts = hasChunkSession ? listUploadedPartNumbers(video) : List.of();
+
+        // 先删 DB 行与级联数据:任何一步失败直接抛错中止,不会留下指向已删对象的悬空行
         videoMapper.deleteById(id);
-        // 级联清理互动数据:点赞/收藏/播放历史/评论/弹幕
         interactionService.deleteByVideo(id);
         historyService.deleteByVideo(id);
         commentService.deleteByVideo(id);
         danmakuService.deleteByVideo(id);
         evictListCache();
+
+        // 再做对象清理:失败仅告警,最坏留下孤儿对象而非不可用的记录
+        if (hasChunkSession) {
+            deleteChunks(video.getUploadId(), chunkParts);
+        }
+        // 原片被其他视频(秒传共享)引用时保留,否则一并删除
+        if (video.getObjectKey() != null && !objectShared) {
+            removeObject(MinioConfig.BUCKET_VIDEOS, video.getObjectKey());
+        }
+        removePrefix(MinioConfig.BUCKET_HLS, video.getId() + "/");
         // 跨服务孤儿数据清理:失败仅告警,不影响删除结果
         try {
             moderationInternalClient.purgeReports(id);
@@ -522,10 +566,17 @@ public class VideoService {
         }
         String normalizedCategory = VideoMetaPolicy.normalizeCategory(category);
         String normalizedTags = VideoMetaPolicy.normalizeTags(tags);
+        String trimmedTitle = title.trim();
+        String trimmedDescription = description == null ? "" : description.trim();
+        // 编辑同样过机审:标题与简介命中敏感词直接拒绝,防止绕过上传时的筛查
+        if (!sensitiveWordHolder.current().screen(trimmedTitle).isEmpty()
+                || !sensitiveWordHolder.current().screen(trimmedDescription).isEmpty()) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "内容包含违规词汇");
+        }
         videoMapper.update(null, new LambdaUpdateWrapper<Video>()
                 .eq(Video::getId, id)
-                .set(Video::getTitle, title.trim())
-                .set(Video::getDescription, description == null ? "" : description.trim())
+                .set(Video::getTitle, trimmedTitle)
+                .set(Video::getDescription, trimmedDescription)
                 .set(Video::getCategory, normalizedCategory)
                 .set(Video::getTags, normalizedTags)
                 .set(Video::getUpdatedAt, LocalDateTime.now()));
@@ -600,9 +651,13 @@ public class VideoService {
             if (done != null) {
                 Video v = new Video();
                 v.setOwnerId(ownerId);
-                // 秒传也采用表单元数据:标题未填才回退文件名
-                v.setTitle(title != null && !title.isBlank() ? title.trim()
-                        : safeName.substring(0, safeName.lastIndexOf('.')));
+                // 秒传也采用表单元数据:标题未填才回退文件名去扩展名,文件名无有效点号时回退"未命名投稿"
+                String instantTitle = title != null && !title.isBlank()
+                        ? title.trim() : fileNameTitleOf(safeName);
+                if (instantTitle.isEmpty() || instantTitle.length() > 100) {
+                    throw BizException.of(ErrorCode.VIDEO_TITLE_INVALID);
+                }
+                v.setTitle(instantTitle);
                 v.setDescription(description == null ? "" : description.trim());
                 v.setCategory(VideoMetaPolicy.normalizeCategory(category));
                 v.setTags(VideoMetaPolicy.normalizeTags(tags));
@@ -681,65 +736,81 @@ public class VideoService {
     public void completeUpload(Long videoId, String title, String description,
                                String category, String tags, Long ownerId) {
         Video video = requireOwnedUpload(videoId, ownerId);
-        // 并发兜底:原子确认仍持有上传会话,防止两个并发 complete 同时走到合并
+        // ①原子占用:仅当仍处于 UPLOADED 且持有本次 uploadId 时推进到 AUTO_SCREENING,
+        // 两个并发 complete 只有一个能成功占用,另一个直接冲突返回
         int claimed = videoMapper.update(null, new LambdaUpdateWrapper<Video>()
                 .eq(Video::getId, videoId)
                 .eq(Video::getStatus, VideoStatus.UPLOADED.name())
-                .isNotNull(Video::getUploadId)
-                .set(Video::getStatus, VideoStatus.UPLOADED.name())
+                .eq(Video::getUploadId, video.getUploadId())
+                .set(Video::getStatus, VideoStatus.AUTO_SCREENING.name())
                 .set(Video::getUpdatedAt, LocalDateTime.now()));
         if (claimed == 0) {
             throw BizException.of(ErrorCode.VIDEO_STATUS_CONFLICT, "上传会话不存在或已完成");
         }
-        if (title == null || title.isBlank() || title.length() > 100) {
-            throw BizException.of(ErrorCode.VIDEO_TITLE_INVALID);
-        }
-        if (description != null && description.length() > 2000) {
-            throw BizException.of(ErrorCode.PARAM_INVALID, "简介过长");
-        }
-        String normalizedCategory = VideoMetaPolicy.normalizeCategory(category);
-        String normalizedTags = VideoMetaPolicy.normalizeTags(tags);
-        long partSize = video.getPartSize() != null ? video.getPartSize() : UploadPolicy.MIN_PART_SIZE;
-        long size = video.getSizeBytes() != null ? video.getSizeBytes() : 0;
-        int expected = size > 0 ? (int) Math.ceil((double) size / partSize) : 1;
-
-        List<Integer> uploaded = listUploadedPartNumbers(video);
-        if (uploaded.size() != expected) {
-            throw new BizException(ErrorCode.PARAM_INVALID,
-                    "分片不完整: 已收 %d/%d".formatted(uploaded.size(), expected));
-        }
-
-        // 服务端合并:composeObject 按 5MiB 对齐的分片顺序拼接
-        List<io.minio.ComposeSource> sources = uploaded.stream()
-                .map(p -> io.minio.ComposeSource.builder()
-                        .bucket(MinioConfig.BUCKET_VIDEOS)
-                        .object(chunkObject(video.getUploadId(), p))
-                        .build())
-                .toList();
         try {
-            minioClient.composeObject(io.minio.ComposeObjectArgs.builder()
-                    .bucket(MinioConfig.BUCKET_VIDEOS)
-                    .object(video.getObjectKey())
-                    .sources(sources)
-                    .build());
-        } catch (Exception e) {
-            log.error("compose chunks failed, video={}", videoId, e);
-            throw new BizException(ErrorCode.INTERNAL_ERROR, "分片合并失败");
+            if (title == null || title.isBlank() || title.length() > 100) {
+                throw BizException.of(ErrorCode.VIDEO_TITLE_INVALID);
+            }
+            if (description != null && description.length() > 2000) {
+                throw BizException.of(ErrorCode.PARAM_INVALID, "简介过长");
+            }
+            String normalizedCategory = VideoMetaPolicy.normalizeCategory(category);
+            String normalizedTags = VideoMetaPolicy.normalizeTags(tags);
+            long partSize = video.getPartSize() != null ? video.getPartSize() : UploadPolicy.MIN_PART_SIZE;
+            long size = video.getSizeBytes() != null ? video.getSizeBytes() : 0;
+            int expected = size > 0 ? (int) Math.ceil((double) size / partSize) : 1;
+
+            // ②校验分片数量→compose→清理分片
+            List<Integer> uploaded = listUploadedPartNumbers(video);
+            if (uploaded.size() != expected) {
+                throw new BizException(ErrorCode.PARAM_INVALID,
+                        "分片不完整: 已收 %d/%d".formatted(uploaded.size(), expected));
+            }
+
+            // 服务端合并:composeObject 按 5MiB 对齐的分片顺序拼接
+            List<io.minio.ComposeSource> sources = uploaded.stream()
+                    .map(p -> io.minio.ComposeSource.builder()
+                            .bucket(MinioConfig.BUCKET_VIDEOS)
+                            .object(chunkObject(video.getUploadId(), p))
+                            .build())
+                    .toList();
+            try {
+                minioClient.composeObject(io.minio.ComposeObjectArgs.builder()
+                        .bucket(MinioConfig.BUCKET_VIDEOS)
+                        .object(video.getObjectKey())
+                        .sources(sources)
+                        .build());
+            } catch (Exception e) {
+                log.error("compose chunks failed, video={}", videoId, e);
+                throw new BizException(ErrorCode.INTERNAL_ERROR, "分片合并失败");
+            }
+
+            deleteChunks(video.getUploadId(), uploaded);
+
+            // ③显式提交表单元数据并置空 uploadId:UpdateWrapper set null 才能真正清列
+            videoMapper.update(null, new LambdaUpdateWrapper<Video>()
+                    .eq(Video::getId, videoId)
+                    .set(Video::getUploadId, null)
+                    .set(Video::getTitle, title.trim())
+                    .set(Video::getDescription, description == null ? "" : description.trim())
+                    .set(Video::getCategory, normalizedCategory)
+                    .set(Video::getTags, normalizedTags)
+                    .set(Video::getUpdatedAt, LocalDateTime.now()));
+
+            eventPublisher.publishUploaded(new VideoUploadedEvent(
+                    video.getId(), video.getObjectKey(), video.getOwnerId(), video.getOriginalFilename(),
+                    title.trim(), description == null ? "" : description.trim()));
+            log.info("video {} chunks merged ({} parts), submitted for moderation", videoId, uploaded.size());
+        } catch (RuntimeException e) {
+            // ④⑤占用后任何一步失败(校验/合并/事件):回退到 UPLOADED 释放会话,再抛原异常
+            log.error("complete upload failed, release session for video {}", videoId, e);
+            videoMapper.update(null, new LambdaUpdateWrapper<Video>()
+                    .eq(Video::getId, videoId)
+                    .eq(Video::getStatus, VideoStatus.AUTO_SCREENING.name())
+                    .set(Video::getStatus, VideoStatus.UPLOADED.name())
+                    .set(Video::getUpdatedAt, LocalDateTime.now()));
+            throw e;
         }
-
-        deleteChunks(video.getUploadId(), uploaded);
-
-        video.setTitle(title.trim());
-        video.setDescription(description == null ? "" : description.trim());
-        video.setCategory(normalizedCategory);
-        video.setTags(normalizedTags);
-        video.setStatus(VideoStatus.AUTO_SCREENING.name());
-        video.setUploadId(null);
-        videoMapper.updateById(video);
-        eventPublisher.publishUploaded(new VideoUploadedEvent(
-                video.getId(), video.getObjectKey(), video.getOwnerId(), video.getOriginalFilename(),
-                video.getTitle(), video.getDescription()));
-        log.info("video {} chunks merged ({} parts), submitted for moderation", videoId, uploaded.size());
     }
 
     private Video requireOwnedUpload(Long videoId, Long ownerId) {
@@ -806,6 +877,18 @@ public class VideoService {
         return fileName.replace("/", "").replace("\\", "").replace("..", "");
     }
 
+    /** 文件名去扩展名作为标题:无点号或点在首位(无有效主干)时回退"未命名投稿"。 */
+    static String fileNameTitleOf(String safeName) {
+        int dot = safeName.lastIndexOf('.');
+        if (dot > 0) {
+            String base = safeName.substring(0, dot).trim();
+            if (!base.isEmpty()) {
+                return base;
+            }
+        }
+        return "未命名投稿";
+    }
+
     /** md5 归一:空视为 null;非空必须为 32 位十六进制。 */
     private String normalizeMd5(String md5) {
         if (md5 == null || md5.isBlank()) {
@@ -832,11 +915,12 @@ public class VideoService {
         }
     }
 
-    private void revertToUploaded(Long id) {
-        videoMapper.update(null, new LambdaUpdateWrapper<Video>()
-                .eq(Video::getId, id)
-                .set(Video::getStatus, VideoStatus.UPLOADED.name())
-                .set(Video::getUpdatedAt, LocalDateTime.now()));
+    /** 一步上传失败回退:删除 videos 行并尽力清理原片对象,不留无法推进的死记录。 */
+    private void discardFailedUpload(Long id, String objectKey) {
+        videoMapper.deleteById(id);
+        if (objectKey != null) {
+            removeObject(MinioConfig.BUCKET_VIDEOS, objectKey);
+        }
     }
 
     private VideoStatus parseStatus(String s) {

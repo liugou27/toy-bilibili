@@ -104,6 +104,7 @@ ID 全局雪花(`common/Snowflake`,时钟回拨等待);JSON 输出:ID 为字符�
 - **兜底**:Feign 全挂 FallbackFactory(明确降级语义)、网关 Redis 故障降级验签、下游不可用统一 503 JSON、词滤 Feign 失败保留本地词库、启动词库加载失败退化为 DB 查重。
 - **可观测**:traceId 网关生成 → MDC → Feign/MQ 透传,全链路日志可串联;Actuator 健康检查(容器 HEALTHCHECK 依赖)。
 - **优雅停机**:全部服务 `server.shutdown: graceful` + 30s 生命周期超时。
+- **已知安全边界(学习项目取舍)**:`/internal/**` 仅靠 `X-Internal-Call` 头标识服务间调用,且服务端口绑定全部网卡——同网段主机可伪造头直连内部接口(状态机/词库快照/清理)。生产形态应为服务间 mTLS 或网络隔离(compose 内网 + 仅网关暴露);本地/实验环境可接受。
 - **性能实测**(bench.py):首页缓存命中 **2432 QPS / p99 153ms / 0 错误**;限流闸门按配置生效(56 QPS + 15.7 万 429)。
 
 ## 7. 部署

@@ -72,7 +72,11 @@ public class SensitiveWordAdminController {
         row.setStatus("ENABLED");
         row.setCreatedAt(now);
         row.setUpdatedAt(now);
-        wordMapper.insert(row);
+        try {
+            wordMapper.insert(row);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "敏感词已存在: " + word);
+        }
         sensitiveWordService.reload();
         return R.ok();
     }
@@ -106,6 +110,12 @@ public class SensitiveWordAdminController {
     @PostMapping("/import")
     public R<Integer> importWords(@RequestBody ImportRequest req) {
         requireAdmin();
+        if (req.getWords() == null || req.getWords().isEmpty()) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "导入列表为空");
+        }
+        if (req.getWords().size() > 500) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "单次导入最多 500 个词");
+        }
         String level = requireLevel(req.getLevel());
         if (req.getWords() == null || req.getWords().isEmpty()) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "词列表不能为空");

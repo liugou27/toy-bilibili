@@ -37,8 +37,22 @@ public class ModerationService {
 
     /** 事件触发:先文本机审(标题/简介),再画面机审并推进状态。状态回写失败(2105)视为重复/过期投递,幂等跳过。 */
     public void moderate(Long videoId, String objectKey, String title, String description) {
-        if (reportMapper.selectCount(new LambdaQueryWrapper<ModerationReport>()
-                .eq(ModerationReport::getVideoId, videoId)) > 0) {
+        ModerationReport existing = reportMapper.selectOne(new LambdaQueryWrapper<ModerationReport>()
+                .eq(ModerationReport::getVideoId, videoId));
+        if (existing != null) {
+            // 补偿:报告已存在但视频仍卡在 AUTO_SCREENING(上次回写失败)→ 按报告结论补写状态
+            var brief = videoInternalClient.batch(List.of(videoId));
+            if (brief != null && brief.code() == 0 && brief.data() != null && !brief.data().isEmpty()) {
+                if (VideoStatus.AUTO_SCREENING.name().equals(brief.data().get(0).status())) {
+                    boolean rejectExisting = "REJECTED".equals(existing.getDecision())
+                            || "AUTO_FAIL".equals(existing.getAutoVerdict());
+                    applyStatus(videoId, new VideoInternalClient.InternalStatusUpdate(
+                            rejectExisting ? VideoStatus.REJECTED.name() : VideoStatus.UNDER_REVIEW.name(),
+                            null, null, null, existing.getRejectReason()));
+                    log.warn("compensated stuck video {} -> {}", videoId,
+                            rejectExisting ? VideoStatus.REJECTED : VideoStatus.UNDER_REVIEW);
+                }
+            }
             log.info("moderation report exists for video {}, skip (idempotent)", videoId);
             return;
         }
@@ -52,6 +66,16 @@ public class ModerationService {
         List<String> reviewHits = hits.getOrDefault(SensitiveWordFilter.LEVEL_REVIEW, List.of());
         boolean textFail = !rejectHits.isEmpty();
 
+        JsonNode screenResult = null;
+        if (rejectHits.isEmpty()) {
+            try {
+                screenResult = autoScreenService.screen(objectKey);
+            } catch (AutoScreenService.SourceVanishedException ve) {
+                // 视频已删除:报告/状态均无意义,静默确认消息避免无限重投
+                log.info("video {} deleted before screening, ack and skip", videoId);
+                return;
+            }
+        }
         JsonNode meta = null;
         String verdict;
         String reportJson;
@@ -162,7 +186,7 @@ public class ModerationService {
                 && !claimExpired(report)) {
             throw BizException.of(ErrorCode.MODERATION_NOT_PENDING, "该任务已被其他审核员认领");
         }
-        reportMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ModerationReport>()
+        int rows = reportMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ModerationReport>()
                 .eq(ModerationReport::getId, report.getId())
                 .eq(ModerationReport::getDecision, "PENDING")
                 .and(w -> w.isNull(ModerationReport::getClaimedBy)
@@ -171,6 +195,26 @@ public class ModerationService {
                                 LocalDateTime.now().minusMinutes(CLAIM_TIMEOUT_MINUTES)))
                 .set(ModerationReport::getClaimedBy, reviewerId)
                 .set(ModerationReport::getClaimedAt, LocalDateTime.now()));
+        if (rows == 0) {
+            // 读检查与更新之间被他人抢先认领
+            throw BizException.of(ErrorCode.MODERATION_NOT_PENDING, "该任务已被其他审核员认领");
+        }
+    }
+
+    /** 状态回写失败时把已决策的报告回滚为 PENDING,保留人工重试入口。 */
+    private void revertReportToPending(Long reportId) {
+        try {
+            reportMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ModerationReport>()
+                    .eq(ModerationReport::getId, reportId)
+                    .in(ModerationReport::getDecision, "APPROVED", "REJECTED")
+                    .set(ModerationReport::getDecision, "PENDING")
+                    .set(ModerationReport::getReviewerId, null)
+                    .set(ModerationReport::getRejectReason, null)
+                    .set(ModerationReport::getDecidedAt, null));
+            log.warn("report {} reverted to PENDING after status-writeback failure", reportId);
+        } catch (Exception ex) {
+            log.error("revert report {} failed", reportId, ex);
+        }
     }
 
     /** 决策前校验认领归属:被他人认领且未超时时,决策人必须是认领人(或认领已过期)。 */
@@ -207,8 +251,13 @@ public class ModerationService {
         ModerationReport report = requirePendingReport(videoId);
         assertClaimableBy(report, reviewerId);
         transitionDecision(videoId, reviewerId, "APPROVED", null);
-        applyStatus(videoId, new VideoInternalClient.InternalStatusUpdate(
-                VideoStatus.APPROVED.name(), null, null, null, null));
+        try {
+            applyStatus(videoId, new VideoInternalClient.InternalStatusUpdate(
+                    VideoStatus.APPROVED.name(), null, null, null, null));
+        } catch (Exception e) {
+            revertReportToPending(report.getId());
+            throw e;
+        }
         log.info("video {} approved by {}", videoId, reviewerId);
     }
 
@@ -220,8 +269,13 @@ public class ModerationService {
         ModerationReport report = requirePendingReport(videoId);
         assertClaimableBy(report, reviewerId);
         transitionDecision(videoId, reviewerId, "REJECTED", reason.trim());
-        applyStatus(videoId, new VideoInternalClient.InternalStatusUpdate(
-                VideoStatus.REJECTED.name(), null, null, null, reason.trim()));
+        try {
+            applyStatus(videoId, new VideoInternalClient.InternalStatusUpdate(
+                    VideoStatus.REJECTED.name(), null, null, null, reason.trim()));
+        } catch (Exception e) {
+            revertReportToPending(report.getId());
+            throw e;
+        }
         log.info("video {} rejected by {}: {}", videoId, reviewerId, reason.trim());
     }
 

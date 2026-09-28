@@ -31,21 +31,7 @@ public class MinioConfig {
             if (!client.bucketExists(BucketExistsArgs.builder().bucket(BUCKET_VIDEOS).build())) {
                 client.makeBucket(MakeBucketArgs.builder().bucket(BUCKET_VIDEOS).build());
             }
-            if (!client.bucketExists(BucketExistsArgs.builder().bucket(BUCKET_HLS).build())) {
-                client.makeBucket(MakeBucketArgs.builder().bucket(BUCKET_HLS).build());
-            }
-            String policy = """
-                    {
-                      "Version": "2012-10-17",
-                      "Statement": [{
-                        "Effect": "Allow",
-                        "Principal": {"AWS": ["*"]},
-                        "Action": ["s3:GetObject"],
-                        "Resource": ["arn:aws:s3:::%s/*"]
-                      }]
-                    }""".formatted(BUCKET_HLS);
-            client.setBucketPolicy(SetBucketPolicyArgs.builder().bucket(BUCKET_HLS).config(policy).build());
-            log.info("minio buckets ready, '{}' public read", BUCKET_HLS);
+            log.info("minio buckets ready, hls kept private (served via video-service proxy)", BUCKET_HLS);
         } catch (Exception e) {
             log.error("minio init failed", e);
             throw new BizException(ErrorCode.INTERNAL_ERROR, "对象存储不可用");

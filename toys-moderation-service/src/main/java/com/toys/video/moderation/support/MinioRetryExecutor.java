@@ -49,9 +49,17 @@ public class MinioRetryExecutor {
         return e instanceof RuntimeException re ? re : new RuntimeException(e);
     }
 
-    /** 网络类异常(MinIO 错误响应/IO 及其包装)才重试,业务异常直接上抛。 */
+    /** 永久性 MinIO 错误码:重试注定失败,直接上抛省 3.5 秒退避。 */
+    private static final java.util.Set<String> PERMANENT_CODES = java.util.Set.of(
+            "NoSuchKey", "NoSuchBucket", "AccessDenied", "InvalidBucketName", "InvalidObjectName");
+
+    /** 网络类异常(MinIO 错误响应/IO 及其包装)才重试;永久性错误码与业务异常直接上抛。 */
     private boolean retryable(Throwable e) {
         for (Throwable cur = e; cur != null; cur = cur.getCause()) {
+            if (cur instanceof io.minio.errors.ErrorResponseException er
+                    && PERMANENT_CODES.contains(er.errorResponse().code())) {
+                return false;
+            }
             if (cur instanceof ErrorResponseException || cur instanceof IOException) {
                 return true;
             }

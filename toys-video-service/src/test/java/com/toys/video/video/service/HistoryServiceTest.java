@@ -49,6 +49,13 @@ class HistoryServiceTest {
     }
 
     @Test
+    void normalizePosition_nonFiniteTreatedAsZero() {
+        assertEquals(0d, HistoryService.normalizePosition(Double.NaN));
+        assertEquals(0d, HistoryService.normalizePosition(Double.POSITIVE_INFINITY));
+        assertEquals(0d, HistoryService.normalizePosition(Double.NEGATIVE_INFINITY));
+    }
+
+    @Test
     void savePosition_nullPositionRejected() {
         assertThrows(BizException.class, () -> historyService.savePosition(1L, 42L, null));
         verifyNoInteractions(videoMapper, historyMapper);
@@ -62,8 +69,17 @@ class HistoryServiceTest {
     }
 
     @Test
+    void savePosition_unpublishedVideoThrows() {
+        com.toys.video.video.entity.Video video = new com.toys.video.video.entity.Video();
+        video.setStatus("TRANSCODING");
+        when(videoMapper.selectById(1L)).thenReturn(video);
+        assertThrows(BizException.class, () -> historyService.savePosition(1L, 42L, 10d));
+        verifyNoInteractions(historyMapper);
+    }
+
+    @Test
     void savePosition_noRecordInserts() {
-        when(videoMapper.selectById(1L)).thenReturn(new com.toys.video.video.entity.Video());
+        when(videoMapper.selectById(1L)).thenReturn(publishedVideo());
         when(historyMapper.selectOne(any())).thenReturn(null);
         historyService.savePosition(1L, 42L, 30.5);
         verify(historyMapper).insert(any(VideoHistory.class));
@@ -72,7 +88,7 @@ class HistoryServiceTest {
 
     @Test
     void savePosition_existingUpdates() {
-        when(videoMapper.selectById(1L)).thenReturn(new com.toys.video.video.entity.Video());
+        when(videoMapper.selectById(1L)).thenReturn(publishedVideo());
         when(historyMapper.selectOne(any())).thenReturn(new VideoHistory());
         historyService.savePosition(1L, 42L, 60d);
         verify(historyMapper).update(isNull(), any());
@@ -81,10 +97,17 @@ class HistoryServiceTest {
 
     @Test
     void savePosition_duplicateKeyFallsBackToUpdate() {
-        when(videoMapper.selectById(1L)).thenReturn(new com.toys.video.video.entity.Video());
+        when(videoMapper.selectById(1L)).thenReturn(publishedVideo());
         when(historyMapper.selectOne(any())).thenReturn(null);
         when(historyMapper.insert(any(VideoHistory.class))).thenThrow(new DuplicateKeyException("dup"));
         historyService.savePosition(1L, 42L, 45d);
         verify(historyMapper).update(isNull(), any());
+    }
+
+    /** 已发布视频实体(播放历史前置条件)。 */
+    private static com.toys.video.video.entity.Video publishedVideo() {
+        com.toys.video.video.entity.Video video = new com.toys.video.video.entity.Video();
+        video.setStatus("PUBLISHED");
+        return video;
     }
 }

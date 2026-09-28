@@ -69,12 +69,16 @@ spring:
                     redis-rate-limiter.replenishRate: 20
                     redis-rate-limiter.burstCapacity: 40
                     key-resolver: "#{@userKeyResolver}"
-            - id: minio-media
-              uri: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+            - id: media-proxy
+              uri: lb://toys-video-service
               predicates:
                 - Path=/media/**
               filters:
-                - RewritePath=/media/(?<segment>.*), /$\{segment}
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 100
+                    redis-rate-limiter.burstCapacity: 200
+                    key-resolver: "#{@userKeyResolver}"
 
 toys:
   jwt:

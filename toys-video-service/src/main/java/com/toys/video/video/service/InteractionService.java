@@ -2,6 +2,7 @@ package com.toys.video.video.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.toys.video.api.enums.VideoStatus;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.video.entity.Video;
@@ -61,7 +62,8 @@ public class InteractionService {
     }
 
     /** 当前用户是否已点赞(匿名返回 false)。 */
-    public boolean likedByMe(Long videoId, Long userId) {
+    /** 详情装配用:按 (video,user) 查点赞态,不做发布门槛(owner 预览未发布视频也需要)。 */
+public boolean likedByMe(Long videoId, Long userId) {
         if (userId == null) {
             return false;
         }
@@ -94,7 +96,8 @@ public class InteractionService {
     }
 
     /** 当前用户是否已收藏(匿名返回 false)。 */
-    public boolean favoritedByMe(Long videoId, Long userId) {
+    /** 详情装配用:按 (video,user) 查点赞态,不做发布门槛(owner 预览未发布视频也需要)。 */
+public boolean favoritedByMe(Long videoId, Long userId) {
         if (userId == null) {
             return false;
         }
@@ -112,9 +115,14 @@ public class InteractionService {
                 .eq(VideoFavorite::getVideoId, videoId));
     }
 
+    /** 互动前提:视频存在且已发布;未发布视频不可点赞/收藏。 */
     private void requireVideo(Long videoId) {
-        if (videoMapper.selectById(videoId) == null) {
+        Video video = videoMapper.selectById(videoId);
+        if (video == null) {
             throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
+        }
+        if (!VideoStatus.PUBLISHED.name().equals(video.getStatus())) {
+            throw BizException.of(ErrorCode.VIDEO_NOT_PUBLISHED);
         }
     }
 }

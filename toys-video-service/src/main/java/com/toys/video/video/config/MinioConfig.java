@@ -1,7 +1,5 @@
 package com.toys.video.video.config;
 
-import com.toys.video.common.exception.BizException;
-import com.toys.video.common.exception.ErrorCode;
 import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
@@ -31,33 +29,24 @@ public class MinioConfig {
                 .credentials(accessKey, secretKey)
                 .build();
         try {
-            ensureBucket(client, BUCKET_VIDEOS, false);
-            ensureBucket(client, BUCKET_HLS, true);
+            ensureBucket(client, BUCKET_VIDEOS);
+            ensureBucket(client, BUCKET_HLS);
+            // hls 桶强制私有:媒体一律经 /media/** 服务端代理流出;
+            // 历史部署可能带 public-read 策略,启动时覆盖为"空语句表"策略(等效私有,SDK 拒绝空串)
+            client.setBucketPolicy(SetBucketPolicyArgs.builder().bucket(BUCKET_HLS)
+                    .config("{\"Version\":\"2012-10-17\",\"Statement\":[]}").build());
         } catch (Exception e) {
-            log.error("minio bucket init failed", e);
+            // bucket 初始化失败直接快速失败,避免带病启动后所有对象读写持续报错
+            throw new IllegalStateException("minio bucket 初始化失败: " + e.getMessage(), e);
         }
         return client;
     }
 
-    private void ensureBucket(MinioClient client, String bucket, boolean publicRead) throws Exception {
+    private void ensureBucket(MinioClient client, String bucket) throws Exception {
         boolean exists = client.bucketExists(BucketExistsArgs.builder().bucket(bucket).build());
         if (!exists) {
             client.makeBucket(MakeBucketArgs.builder().bucket(bucket).build());
             log.info("created minio bucket '{}'", bucket);
-        }
-        if (publicRead) {
-            String policy = """
-                    {
-                      "Version": "2012-10-17",
-                      "Statement": [{
-                        "Effect": "Allow",
-                        "Principal": {"AWS": ["*"]},
-                        "Action": ["s3:GetObject"],
-                        "Resource": ["arn:aws:s3:::%s/*"]
-                      }]
-                    }""".formatted(bucket);
-            client.setBucketPolicy(SetBucketPolicyArgs.builder().bucket(bucket).config(policy).build());
-            log.info("bucket '{}' set to public read", bucket);
         }
     }
 }

@@ -78,11 +78,16 @@ public class UsernameBloomService {
         return current != null && current.mightContain(username);
     }
 
-    /** 注册成功后登记新用户名。 */
+    /** 注册成功后登记新用户名;写后复核引用,若期间发生整体重建则补写新实例(消除假阴性窗口)。 */
     public void add(String username) {
         BloomFilter current = filter;
-        if (current != null) {
-            current.add(username);
+        if (current == null) {
+            return;
+        }
+        current.add(username);
+        BloomFilter after = filter;
+        if (after != current) {
+            after.add(username);
         }
     }
 

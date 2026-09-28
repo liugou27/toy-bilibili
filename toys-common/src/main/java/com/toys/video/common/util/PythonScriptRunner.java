@@ -24,6 +24,8 @@ public class PythonScriptRunner {
     private static final long TIMEOUT_MINUTES = 10;
     /** stdout 上限:累计超过即终止进程,防止异常脚本输出撑爆内存或塞满管道。 */
     private static final int MAX_STDOUT_BYTES = 10 * 1024 * 1024;
+    /** stderr 只用于错误提示,超过即截断,防异常脚本刷屏撑爆内存。 */
+    private static final int MAX_STDERR_BYTES = 1024 * 1024;
     private static final int READ_CHUNK_BYTES = 8192;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -110,7 +112,12 @@ public class PythonScriptRunner {
         byte[] chunk = new byte[READ_CHUNK_BYTES];
         try {
             int n;
+            int total = 0;
             while ((n = in.read(chunk)) != -1) {
+                total += n;
+                if (total > MAX_STDERR_BYTES) {
+                    break; // 截断:继续读丢弃,防止内存膨胀
+                }
                 buffer.write(chunk, 0, n);
             }
         } catch (IOException ignored) {

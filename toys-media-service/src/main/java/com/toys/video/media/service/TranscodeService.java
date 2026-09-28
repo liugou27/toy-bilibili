@@ -99,20 +99,22 @@ public class TranscodeService {
                 cleanup(workDir);
             }
 
-            // 3. 成功回写
-            jobMapper.update(null, new LambdaUpdateWrapper<TranscodeJob>()
-                    .eq(TranscodeJob::getId, job.getId())
-                    .set(TranscodeJob::getStatus, "SUCCESS")
-                    .set(TranscodeJob::getError, null)
-                    .set(TranscodeJob::getPayload, job.getPayload(),
-                            "typeHandler=com.toys.video.media.handler.JsonbTypeHandler")
-                    .set(TranscodeJob::getFinishedAt, LocalDateTime.now()));
+            // 3. 成功回写:先视频 PUBLISHED 再作业 SUCCESS——两步之间崩溃时,
+            //    StartupRecovery 只回收"视频仍 TRANSCODING"的作业,不会误伤已发布视频
             var ok = videoInternalClient.updateStatus(videoId,
                     new VideoInternalClient.InternalStatusUpdate("PUBLISHED",
                             longOrNull(result.path("duration_sec")), null, null, null));
             if (ok != null && ok.code() != 0) {
                 throw new BizException(ErrorCode.INTERNAL_ERROR, "PUBLISHED 回写失败: " + ok.message());
             }
+            jobMapper.update(null, new LambdaUpdateWrapper<TranscodeJob>()
+                    .eq(TranscodeJob::getId, job.getId())
+                    .eq(TranscodeJob::getStatus, "RUNNING")
+                    .set(TranscodeJob::getStatus, "SUCCESS")
+                    .set(TranscodeJob::getError, null)
+                    .set(TranscodeJob::getPayload, job.getPayload(),
+                            "typeHandler=com.toys.video.media.handler.JsonbTypeHandler")
+                    .set(TranscodeJob::getFinishedAt, LocalDateTime.now()));
             log.info("video {} transcoded and PUBLISHED", videoId);
         } catch (Exception e) {
             String error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
@@ -123,6 +125,7 @@ public class TranscodeService {
             } else {
                 jobMapper.update(null, new LambdaUpdateWrapper<TranscodeJob>()
                         .eq(TranscodeJob::getId, job.getId())
+                        .eq(TranscodeJob::getStatus, "RUNNING")
                         .set(TranscodeJob::getStatus, "FAILED")
                         .set(TranscodeJob::getError, error));
                 // 抛出让 MQ 延迟重试

@@ -40,7 +40,9 @@ public class VideoInternalController {
                              @RequestParam(defaultValue = "900") int expirySeconds,
                              HttpServletRequest request) {
         requireInternal(request);
-        return R.ok(videoService.presignedOriginalUrl(id, expirySeconds));
+        // 时长钳制到 [60,3600],防止调用方传入极端值签出超长/过短有效期
+        int clamped = Math.max(60, Math.min(3600, expirySeconds));
+        return R.ok(videoService.presignedOriginalUrl(id, clamped));
     }
 
     @GetMapping("/batch")
@@ -50,9 +52,8 @@ public class VideoInternalController {
         if (ids == null || ids.isEmpty() || ids.size() > 100) {
             return R.ok(List.of());
         }
-        return R.ok(ids.stream()
-                .map(videoMapper::selectById)
-                .filter(java.util.Objects::nonNull)
+        // 一次批量取回,替代逐 id selectById 的 N+1
+        return R.ok(videoMapper.selectByIds(ids).stream()
                 .map(v -> new VideoInternalClient.VideoBrief(v.getId(), v.getTitle(), v.getStatus(),
                         v.getOwnerId(), v.getOriginalFilename(), v.getSizeBytes(), v.getNote()))
                 .toList());

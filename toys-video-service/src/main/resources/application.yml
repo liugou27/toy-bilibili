@@ -52,8 +52,8 @@ rocketmq:
 toys:
   minio:
     endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
-    access-key: minioadmin
-    secret-key: minioadmin
+    access-key: ${MINIO_AK:minioadmin}
+    secret-key: ${MINIO_SK:minioadmin}
   upload:
     allowed-exts: mp4,mkv,mov,avi,flv
 

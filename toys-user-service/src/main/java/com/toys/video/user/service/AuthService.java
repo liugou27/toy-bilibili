@@ -104,17 +104,38 @@ public class AuthService implements ApplicationRunner {
         update.setId(userId);
         update.setPasswordHash(passwordEncoder.encode(newPassword));
         userMapper.updateById(update);
-        logout(currentToken);
+        // 改密踢出该用户全部设备:逐个删除 jti 白名单成员
+        try {
+            String userKey = "auth:user:" + userId;
+            java.util.Set<String> jtis = redis.opsForSet().members(userKey);
+            if (jtis != null) {
+                jtis.forEach(jti -> redis.delete("auth:token:" + jti));
+            }
+            redis.delete(userKey);
+        } catch (Exception e) {
+            log.warn("kick all sessions failed, fallback to current token only: {}", e.getMessage());
+            logout(currentToken);
+        }
     }
 
-    /** 登记签发的 token(jti 白名单,TTL 与 token 剩余寿命一致)。 */
+    /** 登记签发的 token(jti 白名单)并维护 per-user 会话集合(改密时全量踢出)。
+     * Redis 故障时抛错使登录整体失败:否则签出的 token 不在白名单,网关会判为已注销。 */
     private void registerToken(String token) {
+        com.toys.video.common.security.JwtUtil.TokenPayload payload;
         try {
-            com.toys.video.common.security.JwtUtil.TokenPayload payload = jwtUtil.parse(token);
+            payload = jwtUtil.parse(token);
+        } catch (Exception e) {
+            throw new BizException(ErrorCode.INTERNAL_ERROR, "登录服务异常,请重试");
+        }
+        try {
             redis.opsForValue().set("auth:token:" + payload.jti(), "1",
                     java.time.Duration.ofSeconds(jwtTtlSeconds));
+            String userKey = "auth:user:" + payload.userId();
+            redis.opsForSet().add(userKey, payload.jti());
+            redis.expire(userKey, java.time.Duration.ofSeconds(jwtTtlSeconds));
         } catch (Exception e) {
-            log.warn("register token failed: {}", e.getMessage());
+            log.error("register token failed", e);
+            throw new BizException(ErrorCode.INTERNAL_ERROR, "登录服务异常,请重试");
         }
     }
 
@@ -143,9 +164,15 @@ public class AuthService implements ApplicationRunner {
         return toInfo(user);
     }
 
-    /** 幂等种子:保证本地环境始终有可用的管理员账号 admin/admin123。 */
+    @org.springframework.beans.factory.annotation.Value("${toys.user.seed-admin:true}")
+    private boolean seedAdmin;
+
+    /** 幂等种子:本地/实验环境的管理员账号,生产经 toys.user.seed-admin=false 关闭。 */
     @Override
     public void run(ApplicationArguments args) {
+        if (!seedAdmin) {
+            return;
+        }
         Long count = userMapper.selectCount(new LambdaQueryWrapper<User>()
                 .eq(User::getUsername, SEED_ADMIN_USERNAME));
         if (count != null && count > 0) {

@@ -61,7 +61,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        ServerHttpRequest request = exchange.getRequest();
+        ServerHttpRequest request = stripSpoofableHeaders(exchange.getRequest());
         String path = request.getURI().getPath();
         String auth = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
 
@@ -75,8 +75,9 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
         if (isWhitelisted(request.getMethod().name(), path)) {
             // 白名单路径:有有效 token 则附身份(如所有者查看自己的视频),否则匿名放行
+            ServerWebExchange stripped = exchange.mutate().request(request).build();
             return attachUserIfPresent(request)
-                    .flatMap(mutated -> chain.filter(exchange.mutate().request(mutated).build()));
+                    .flatMap(mutated -> chain.filter(stripped.mutate().request(mutated).build()));
         }
 
         String token = auth == null ? null : (auth.startsWith("Bearer ") ? auth.substring(7) : auth);
@@ -109,6 +110,24 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                     .build();
             return chain.filter(exchange.mutate().request(mutated).build());
         });
+    }
+
+    /**
+     * 剥离外部请求携带的可伪造头:X-User-Id/X-User-Role(身份)与 X-Internal-Call(内部调用标记)。
+     * 这些头只能由网关在鉴权后添加;不从入口剥离的话,匿名白名单请求可冒充任意用户。
+     */
+    private ServerHttpRequest stripSpoofableHeaders(ServerHttpRequest request) {
+        boolean hasUserId = request.getHeaders().containsKey(Headers.USER_ID);
+        boolean hasRole = request.getHeaders().containsKey(Headers.USER_ROLE);
+        boolean hasInternal = request.getHeaders().containsKey(Headers.INTERNAL_CALL);
+        if (!hasUserId && !hasRole && !hasInternal) {
+            return request;
+        }
+        return request.mutate().headers(headers -> {
+            headers.remove(Headers.USER_ID);
+            headers.remove(Headers.USER_ROLE);
+            headers.remove(Headers.INTERNAL_CALL);
+        }).build();
     }
 
     private boolean isWhitelisted(String method, String path) {

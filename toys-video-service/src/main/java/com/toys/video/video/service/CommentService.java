@@ -3,12 +3,14 @@ package com.toys.video.video.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.toys.video.api.enums.VideoStatus;
 import com.toys.video.api.feign.UserInternalClient;
 import com.toys.video.common.api.PageResult;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.video.dto.CommentItem;
 import com.toys.video.video.entity.Comment;
+import com.toys.video.video.entity.Video;
 import com.toys.video.video.mapper.CommentMapper;
 import com.toys.video.video.mapper.VideoMapper;
 import com.toys.video.video.text.SensitiveWordHolder;
@@ -54,15 +56,17 @@ public class CommentService {
                 comment.getContent(), comment.getCreatedAt());
     }
 
-    /** 评论分页:按发表时间倒序,公开可读。 */
+    /** 评论分页:按发表时间倒序,公开可读;仅已发布视频可读,防泄漏未发布内容。 */
     public PageResult<CommentItem> page(Long videoId, long page, long size) {
+        requireVideo(videoId);
         IPage<Comment> p = commentMapper.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<Comment>()
                         .eq(Comment::getVideoId, videoId)
                         .orderByDesc(Comment::getCreatedAt));
-        Map<Long, UserInternalClient.UserBrief> users = fetchUsers(p.getRecords().stream()
-                .map(Comment::getUserId).distinct().toList());
-        List<CommentItem> items = p.getRecords().stream()
+        List<Comment> records = p.getRecords();
+        Map<Long, UserInternalClient.UserBrief> users = records.isEmpty() ? Map.of()
+                : fetchUsers(records.stream().map(Comment::getUserId).distinct().toList());
+        List<CommentItem> items = records.stream()
                 .map(c -> {
                     UserInternalClient.UserBrief author = users.getOrDefault(c.getUserId(),
                             new UserInternalClient.UserBrief(c.getUserId(), "用户" + c.getUserId()));
@@ -106,9 +110,14 @@ public class CommentService {
         return trimmed;
     }
 
+    /** 评论前提:视频存在且已发布;未发布视频不可评论/读取评论。 */
     private void requireVideo(Long videoId) {
-        if (videoMapper.selectById(videoId) == null) {
+        Video video = videoMapper.selectById(videoId);
+        if (video == null) {
             throw BizException.of(ErrorCode.VIDEO_NOT_FOUND);
+        }
+        if (!VideoStatus.PUBLISHED.name().equals(video.getStatus())) {
+            throw BizException.of(ErrorCode.VIDEO_NOT_PUBLISHED);
         }
     }
 

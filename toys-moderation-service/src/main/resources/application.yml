@@ -44,8 +44,8 @@ rocketmq:
 toys:
   minio:
     endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
-    access-key: minioadmin
-    secret-key: minioadmin
+    access-key: ${MINIO_AK:minioadmin}
+    secret-key: ${MINIO_SK:minioadmin}
   scripts:
     dir: ${TOYS_SCRIPTS_DIR:/Users/dsy/Desktop/dev/works/toys/scripts}
     python-bin: python3

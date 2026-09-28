@@ -48,8 +48,10 @@ public class AdminModerationController {
                         .eq(ModerationReport::getDecision, "PENDING")
                         .orderByDesc(ModerationReport::getCreatedAt));
         List<Long> videoIds = p.getRecords().stream().map(ModerationReport::getVideoId).toList();
-        Map<Long, VideoInternalClient.VideoBrief> briefs = videoIds.isEmpty() ? Map.of()
-                : videoInternalClient.batch(videoIds).data().stream()
+        var batchResp = videoIds.isEmpty() ? null : videoInternalClient.batch(videoIds);
+        Map<Long, VideoInternalClient.VideoBrief> briefs = (batchResp == null || batchResp.code() != 0
+                || batchResp.data() == null) ? Map.of()
+                : batchResp.data().stream()
                         .collect(Collectors.toMap(VideoInternalClient.VideoBrief::id, Function.identity()));
         List<ModerationQueueItem> items = p.getRecords().stream()
                 .map(r -> {

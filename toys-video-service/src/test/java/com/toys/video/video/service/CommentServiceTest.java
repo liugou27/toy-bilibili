@@ -62,7 +62,7 @@ class CommentServiceTest {
     void post_rejectsSensitiveWord() {
         commentService = new CommentService(commentMapper, videoMapper, userInternalClient,
                 sensitiveWordHolder(Map.of("赌博", SensitiveWordFilter.LEVEL_REJECT)));
-        when(videoMapper.selectById(1L)).thenReturn(new Video());
+        when(videoMapper.selectById(1L)).thenReturn(publishedVideo());
         BizException e = assertThrows(BizException.class,
                 () -> commentService.post(1L, 42L, "来看赌博网站"));
         assertEquals(ErrorCode.PARAM_INVALID, e.getErrorCode());
@@ -72,7 +72,7 @@ class CommentServiceTest {
 
     @Test
     void post_insertsWithTrimmedContentAndFilledUsername() {
-        when(videoMapper.selectById(1L)).thenReturn(new Video());
+        when(videoMapper.selectById(1L)).thenReturn(publishedVideo());
         when(commentMapper.insert(any(Comment.class))).thenAnswer(inv -> {
             inv.getArgument(0, Comment.class).setId(100L);
             return 1;
@@ -130,5 +130,12 @@ class CommentServiceTest {
         BizException e = assertThrows(BizException.class,
                 () -> commentService.delete(1L, 100L, 42L));
         assertEquals(ErrorCode.NOT_FOUND, e.getErrorCode());
+    }
+
+    /** 已发布视频实体(评论前置条件)。 */
+    private static Video publishedVideo() {
+        Video video = new Video();
+        video.setStatus("PUBLISHED");
+        return video;
     }
 }

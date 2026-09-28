@@ -54,6 +54,13 @@ public class AutoScreenService {
         }
     }
 
+    /** 源对象已消失(视频删除)的标记异常:消费侧应 ACK 跳过而非重试。 */
+    static class SourceVanishedException extends RuntimeException {
+        SourceVanishedException(String objectKey) {
+            super("source vanished: " + objectKey);
+        }
+    }
+
     /** 下载原片:经重试执行器,网络抖动自动退避重试。 */
     private void downloadOriginal(String objectKey, Path target) {
         retryExecutor.execute(() -> {
@@ -63,6 +70,12 @@ public class AutoScreenService {
                     .build())) {
                 Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
                 return null;
+            } catch (io.minio.errors.ErrorResponseException e) {
+                if ("NoSuchKey".equals(e.errorResponse().code())) {
+                    // 源对象已不存在(视频被删除):机审无意义,标记后由消费侧静默确认
+                    throw new SourceVanishedException(objectKey);
+                }
+                throw MinioRetryExecutor.unchecked(e);
             } catch (Exception e) {
                 throw MinioRetryExecutor.unchecked(e);
             }

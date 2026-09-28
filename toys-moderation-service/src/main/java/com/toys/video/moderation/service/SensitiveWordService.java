@@ -48,6 +48,16 @@ public class SensitiveWordService {
         return snapshot.version();
     }
 
+    /** 版本与词表来自同一快照引用,避免两次 volatile 读之间发生替换导致版本/词表错配。 */
+    public SnapshotView currentView() {
+        Snapshot snap = snapshot;
+        return new SnapshotView(snap.version(), snap.filter().words());
+    }
+
+    /** 只读视图:供快照接口一次性获取版本与词表。 */
+    public record SnapshotView(long version, java.util.Map<String, String> words) {
+    }
+
     /** 定时检查 DB 版本,变化才全量重载;检查失败保留当前词库。 */
     @Scheduled(fixedDelay = 30_000)
     public void reloadIfChanged() {

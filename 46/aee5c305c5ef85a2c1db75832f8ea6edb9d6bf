@@ -1,0 +1,51 @@
+toys-risk-service/src/main/java/com/toys/video/risk/engine/RiskScoringEngine.java
+  s_17a5063aa38dd4::t_1e37ebd4e21d48 4,8,12,14,17,19-23,25,27-28,33-43,47-51,59-62,72,84,89-143,146-163,165-171,173,175-176,178-185,187-200,202-225,228,230-231,234-236,239-241,246-248,256-258,266-268,276-279,286-299,302-358
+toys-video-service/src/test/java/com/toys/video/video/service/DanmakuServiceTest.java
+  s_17a5063aa38dd4::t_dc23071a6abbeb 29,39-40,46-47,49,64
+toys-api/src/main/java/com/toys/video/api/feign/UserInternalClientFallbackFactory.java
+  s_17a5063aa38dd4::t_1e37ebd4e21d48 23-34
+frontend/src/views/AdminReviewView.vue
+  s_2eff09a675e939::t_356c86cd781baf 104-149,283-291,346-388,596,602,661
+toys-moderation-service/src/main/java/com/toys/video/moderation/ModerationApplication.java
+  s_2eff09a675e939::t_f347589a484bf3 11-12
+toys-moderation-service/src/main/java/com/toys/video/moderation/feign/InternalUserFeignConfig.java
+  s_2eff09a675e939::t_4b838a21638a1e 1-19
+toys-moderation-service/src/main/java/com/toys/video/moderation/feign/UserPunishClient.java
+  s_2eff09a675e939::t_edfe5fbc8c4024 1-31
+toys-moderation-service/src/main/java/com/toys/video/moderation/mq/VideoUploadedConsumer.java
+  s_2eff09a675e939::t_ede9602a9b3e38 43-44
+toys-moderation-service/src/main/java/com/toys/video/moderation/risk/RiskEvaluateClient.java
+  s_2eff09a675e939::t_246d5f42f8b1f9 10,25-32,34-36,41,44-45,47-48,53-60
+toys-moderation-service/src/main/java/com/toys/video/moderation/service/ModerationService.java
+  s_2eff09a675e939::t_af533018409f37 12-13,17,23,27,29,39-42,47,49,52,93-98,108-109,114-123,140,142-148,153-157,161,165-167,169-173,176-177,186,190-195,202-275,299,301,499-516
+toys-moderation-service/src/main/java/com/toys/video/moderation/service/SensitiveWordService.java
+  s_2eff09a675e939::t_28c3e4b757b4c3 15,22-23,30-35,38-39,42,70-112,127,133,136,138-140
+toys-video-service/src/main/java/com/toys/video/video/service/CommentService.java
+  s_2eff09a675e939::t_28c4093f91ba4d 9,48,116-129
+toys-video-service/src/main/java/com/toys/video/video/service/DanmakuService.java
+  s_2eff09a675e939::t_594200fd37e4fb 5-6,38,48,92-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "46aee5c305c5ef85a2c1db75832f8ea6edb9d6bf",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    },
+    "s_2eff09a675e939": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_4647316c-df7e-464e-8117-54e7e36a4ca1",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

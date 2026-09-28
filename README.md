@@ -68,3 +68,16 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 - 设计规格:[docs/superpowers/specs/2026-09-25-video-platform-microservices-design.md](docs/superpowers/specs/2026-09-25-video-platform-microservices-design.md)
 - 实施计划:[docs/superpowers/plans/2026-09-25-video-platform-microservices.md](docs/superpowers/plans/2026-09-25-video-platform-microservices.md)
+
+## 分支模型
+
+- `main`:稳定分支,保持 CI 绿色(每次 push 自动跑单测+构建)
+- `dev`:日常开发分支,功能完成后合回 main
+- feature 分支:`feat/xxx` 从 dev 切出,完成后 PR → dev → dev 稳定后 PR → main
+
+```bash
+git checkout dev && git pull
+git checkout -b feat/your-feature   # 开发
+# ...提交后
+git push -u origin feat/your-feature  # GitHub 上发 PR 合入 dev
+```

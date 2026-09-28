@@ -1,0 +1,84 @@
+toys-moderation-service/src/main/java/com/toys/video/moderation/controller/SensitiveWordAdminController.java
+  s_17a5063aa38dd4::t_8080d7c4e7d4dc 75-79,113-118
+toys-media-service/src/main/java/com/toys/video/media/service/StartupRecovery.java
+  s_17a5063aa38dd4::t_98230e31d8657d 22-25,31-34,63-88
+  s_17a5063aa38dd4::t_0bf73be674bd22 89
+toys-moderation-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_98230e31d8657d 47-48
+toys-moderation-service/src/main/java/com/toys/video/moderation/controller/SensitiveWordsInternalController.java
+  s_17a5063aa38dd4::t_c686421e39689d 29-31,33
+toys-media-service/src/main/java/com/toys/video/media/config/MinioConfig.java
+  s_17a5063aa38dd4::t_b19b90d24f7c1f 34
+toys-video-service/src/main/java/com/toys/video/video/service/InteractionService.java
+  s_17a5063aa38dd4::t_54afcd16cd30ad 65-66,99-100
+  s_17a5063aa38dd4::t_991bece79f04de 5,118,120-121,124-126
+toys-media-service/src/main/java/com/toys/video/media/support/MinioRetryExecutor.java
+  s_17a5063aa38dd4::t_eb572a30b2691d 52-56,59-62
+toys-user-service/src/main/java/com/toys/video/user/service/UsernameBloomService.java
+  s_17a5063aa38dd4::t_2589592a37bffc 81,84-90
+toys-gateway/src/main/java/com/toys/video/gateway/filter/AuthGlobalFilter.java
+  s_17a5063aa38dd4::t_a04ff6c67e5aac 64,78,80,115-130
+  s_17a5063aa38dd4::t_12e7f54d1a93e4 131-132
+toys-gateway/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_fe48676afc0e57 72-73,77-81
+toys-video-service/src/main/java/com/toys/video/video/service/HistoryService.java
+  s_17a5063aa38dd4::t_d41aa4d1497443 58
+  s_17a5063aa38dd4::t_2e0157dda7e85d 5,31,36,57,75,77-88
+toys-user-service/src/main/java/com/toys/video/user/service/AuthService.java
+  s_17a5063aa38dd4::t_2589592a37bffc 107-118,121-122,124-129,133-135,137-138,167-170,173-175
+scripts/e2e_check.py
+  s_17a5063aa38dd4::t_7561b40ccfa9ee 98-99,104,106,323-324
+toys-moderation-service/src/main/java/com/toys/video/moderation/support/MinioRetryExecutor.java
+  s_17a5063aa38dd4::t_eb572a30b2691d 52-56,59-62
+toys-moderation-service/src/main/java/com/toys/video/moderation/service/ModerationService.java
+  s_17a5063aa38dd4::t_51f5fc57091121 69,71-78
+  s_17a5063aa38dd4::t_69f29d0f0fc037 40-55,198-217,254-260,272-278
+  s_17a5063aa38dd4::t_8258b6c68eb557 70
+  s_17a5063aa38dd4::t_181eb5bfe83907 189
+toys-moderation-service/src/main/java/com/toys/video/moderation/controller/AdminModerationController.java
+  s_17a5063aa38dd4::t_c686421e39689d 51-54
+toys-common/src/main/java/com/toys/video/common/util/PythonScriptRunner.java
+  s_17a5063aa38dd4::t_f7bf37570f9bc7 27-28,115,117-120
+toys-moderation-service/src/main/java/com/toys/video/moderation/service/TempDirSweeper.java
+  s_17a5063aa38dd4::t_98230e31d8657d 1-41
+toys-media-service/src/main/java/com/toys/video/media/service/TranscodeService.java
+  s_17a5063aa38dd4::t_98230e31d8657d 128
+  s_17a5063aa38dd4::t_eb572a30b2691d 102-109,112
+toys-media-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_98230e31d8657d 47-48
+docs/backend-architecture.md
+  s_17a5063aa38dd4::t_9694c1d1b1ba16 107
+toys-video-service/src/main/java/com/toys/video/video/service/VideoService.java
+  s_17a5063aa38dd4::t_181eb5bfe83907 438-439
+  s_17a5063aa38dd4::t_eb572a30b2691d 78
+  s_17a5063aa38dd4::t_83589b037d0b6d 29,39-41,141-142,197,200,204-219,281,283-289,291,410-421,460-465,472-481,569-575,578-579,654-660,739-740,744-745,750-768,770-778,780-786,788,790-813,880-891,918-923
+toys-video-service/src/main/java/com/toys/video/video/config/MinioConfig.java
+  s_17a5063aa38dd4::t_9c4a9a4325fde4 35-37
+  s_17a5063aa38dd4::t_496c247f09f48a 32-34,45
+  s_17a5063aa38dd4::t_90fcae1f3515fc 39-40
+toys-moderation-service/src/main/java/com/toys/video/moderation/service/AutoScreenService.java
+  s_17a5063aa38dd4::t_51f5fc57091121 57-63,73-78
+toys-moderation-service/src/main/java/com/toys/video/moderation/service/SensitiveWordService.java
+  s_17a5063aa38dd4::t_c686421e39689d 51-60
+toys-video-service/src/main/java/com/toys/video/video/controller/MediaProxyController.java
+  s_17a5063aa38dd4::t_bcadd29f43007e 41
+  s_17a5063aa38dd4::t_0d702a8d7d7d0e 1-12,14-40,42-74,76-134
+  s_17a5063aa38dd4::t_fe48676afc0e57 75
+  s_17a5063aa38dd4::t_73c837bcfaea09 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "54b5b0ca1a1d83705c65f2f66838314d528546c7",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

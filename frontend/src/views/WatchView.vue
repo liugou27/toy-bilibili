@@ -44,7 +44,7 @@
           </div>
         </div>
         <div class="meta-bar">
-          <span class="owner">{{ detail.ownerName }}</span>
+          <span class="owner owner-link" @click="goUploader(detail.ownerId)">{{ detail.ownerName }}</span>
           <span class="divider">·</span>
           <span>{{ fmtCount(detail.playCount) }} 播放</span>
           <template v-if="detail.publishedAt">
@@ -103,7 +103,7 @@
     </div>
 
     <aside class="watch-side">
-      <div v-if="detail" class="owner-card">
+      <div v-if="detail" class="owner-card clickable" @click="goUploader(detail.ownerId)" title="查看 UP 主主页">
         <span class="owner-avatar">{{ avatarChar(detail.ownerName) }}</span>
         <div class="owner-body">
           <span class="owner-name">{{ detail.ownerName }}</span>
@@ -526,6 +526,10 @@ onBeforeUnmount(() => {
   destroyArt(false)
 })
 
+function goUploader(id) {
+  if (id) router.push(`/uploader/${id}`)
+}
+
 function fmtCount(n) {
   return n >= 10000 ? `${(n / 10000).toFixed(1)}万` : String(n || 0)
 }
@@ -859,6 +863,10 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
+.owner-card.clickable { cursor: pointer; transition: transform .3s var(--ease); }
+.owner-card.clickable:hover { transform: translateY(-2px); }
+.owner-link { cursor: pointer; }
+.owner-link:hover { color: var(--accent); }
 .owner-card {
   display: flex;
   align-items: center;
@@ -1159,7 +1167,11 @@ onBeforeUnmount(() => {
   .watch-side {
     width: 100%;
   }
-  .owner-card {
+  .owner-card.clickable { cursor: pointer; transition: transform .3s var(--ease); }
+.owner-card.clickable:hover { transform: translateY(-2px); }
+.owner-link { cursor: pointer; }
+.owner-link:hover { color: var(--accent); }
+.owner-card {
     margin-top: 16px;
   }
 }

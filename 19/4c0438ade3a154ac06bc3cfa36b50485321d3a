@@ -1,0 +1,19 @@
+.github/workflows/ci.yml
+  s_17a5063aa38dd4::t_aeaa9829024dea 1-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "194c0438ade3a154ac06bc3cfa36b50485321d3a",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

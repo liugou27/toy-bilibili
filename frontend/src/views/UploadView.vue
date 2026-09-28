@@ -376,7 +376,7 @@ async function submit() {
       title: form.title.trim(),
       description: form.description.trim(),
       category: form.category,
-      tags: form.tags.join(',')
+      tags: tags.value.join(',')
     })
     ElMessage.success('投稿成功,进入审核流程')
     router.push('/my')

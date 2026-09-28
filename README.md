@@ -1,5 +1,9 @@
 # toys-video
 
+[![Java 21](https://img.shields.io/badge/Java-21-orange)]() [![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-green)]() [![Spring Cloud Alibaba](https://img.shields.io/badge/Spring%20Cloud%20Alibaba-2025.0.0.0-red)]() [![License: MIT](https://img.shields.io/badge/License-MIT-blue)]()
+
+> 微服务视频平台学习项目:上传(分片直传/秒传/断点续传)→ 风控评级(类型化违规/黑样本/敏感词热更新)→ 人工审核(认领)→ 转码(HLS)→ 播放(Artplayer 弹幕)→ 互动(点赞/收藏/评论/弹幕/关注/处罚)。6 服务 + 69 单测 + 22 步全链路回归。
+
 微服务架构的视频平台 MVP(学习项目):**上传 → 自动机审 → 人工审核 → 转码 → 播放** 全链路。
 
 参考 Bilibili/YouTube 的核心链路,重点在微服务整套流程的实践:服务注册与配置中心(Nacos)、网关统一鉴权(Spring Cloud Gateway + JWT)、服务间调用(OpenFeign)、异步事件驱动(RocketMQ)、对象存储(MinIO/S3)、schema-per-service(PostgreSQL)。

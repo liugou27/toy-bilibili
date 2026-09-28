@@ -27,6 +27,9 @@ public class User {
     /** 头像地址,未设置时前端显示首字圆点。 */
     private String avatar;
 
+    /** 手动封禁截止时间,null 或已过期表示未手动封禁。 */
+    private LocalDateTime bannedUntil;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

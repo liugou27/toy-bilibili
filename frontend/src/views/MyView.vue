@@ -2,7 +2,7 @@
   <div class="my">
     <header class="page-head">
       <h1>我的空间</h1>
-      <p class="sub">投稿、收藏与播放历史</p>
+      <p class="sub">投稿、收藏、历史与关注</p>
     </header>
 
     <div class="seg" role="tablist">
@@ -91,7 +91,7 @@
       </section>
 
       <!-- 播放历史 -->
-      <section v-else key="history" class="tab-pane">
+      <section v-else-if="tab === 'history'" key="history" class="tab-pane">
         <el-card shadow="never">
           <el-empty v-if="!hist.list.length && !hist.loading" description="还没有观看记录,去发现页看看吧" />
           <template v-else>
@@ -117,6 +117,60 @@
           </template>
         </el-card>
       </section>
+
+      <!-- 我的关注 -->
+      <section v-else-if="tab === 'follows'" key="follows" class="tab-pane">
+        <el-card shadow="never">
+          <el-empty v-if="!follows.list.length && !follows.loading" description="还没有关注的人" />
+          <template v-else>
+            <ul class="rows rows-clickable" v-loading="follows.loading">
+              <li v-for="row in follows.list" :key="row.userId" class="row row-link"
+                  @click="$router.push(`/uploader/${row.userId}`)">
+                <img v-if="row.avatar" :src="row.avatar" class="u-avatar" loading="lazy" />
+                <span v-else class="u-avatar u-avatar-fallback">{{ avatarChar(row) }}</span>
+                <div class="row-main">
+                  <div class="row-title">{{ row.nickname || row.username }}</div>
+                  <div class="row-meta">@{{ row.username }} · 关注于 {{ fmtDate(row.followedAt) }}</div>
+                </div>
+                <span class="row-chevron">›</span>
+              </li>
+            </ul>
+            <div v-if="follows.total > PAGE_SIZE" class="pager">
+              <el-button text :disabled="follows.page <= 1" @click="goPage(follows, follows.page - 1, loadFollows)">上一页</el-button>
+              <span class="pager-info">{{ follows.page }} / {{ pageCount(follows.total) }}</span>
+              <el-button text :disabled="follows.page >= pageCount(follows.total)"
+                         @click="goPage(follows, follows.page + 1, loadFollows)">下一页</el-button>
+            </div>
+          </template>
+        </el-card>
+      </section>
+
+      <!-- 我的粉丝 -->
+      <section v-else key="fans" class="tab-pane">
+        <el-card shadow="never">
+          <el-empty v-if="!fans.list.length && !fans.loading" description="还没有粉丝" />
+          <template v-else>
+            <ul class="rows rows-clickable" v-loading="fans.loading">
+              <li v-for="row in fans.list" :key="row.userId" class="row row-link"
+                  @click="$router.push(`/uploader/${row.userId}`)">
+                <img v-if="row.avatar" :src="row.avatar" class="u-avatar" loading="lazy" />
+                <span v-else class="u-avatar u-avatar-fallback">{{ avatarChar(row) }}</span>
+                <div class="row-main">
+                  <div class="row-title">{{ row.nickname || row.username }}</div>
+                  <div class="row-meta">@{{ row.username }} · 关注于 {{ fmtDate(row.followedAt) }}</div>
+                </div>
+                <span class="row-chevron">›</span>
+              </li>
+            </ul>
+            <div v-if="fans.total > PAGE_SIZE" class="pager">
+              <el-button text :disabled="fans.page <= 1" @click="goPage(fans, fans.page - 1, loadFans)">上一页</el-button>
+              <span class="pager-info">{{ fans.page }} / {{ pageCount(fans.total) }}</span>
+              <el-button text :disabled="fans.page >= pageCount(fans.total)"
+                         @click="goPage(fans, fans.page + 1, loadFans)">下一页</el-button>
+            </div>
+          </template>
+        </el-card>
+      </section>
     </Transition>
   </div>
 </template>
@@ -125,11 +179,14 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '../api.js'
+import { auth } from '../auth.js'
 
 const TABS = [
   { key: 'videos', label: '我的投稿' },
   { key: 'favorites', label: '我的收藏' },
-  { key: 'history', label: '播放历史' }
+  { key: 'history', label: '播放历史' },
+  { key: 'follows', label: '我的关注' },
+  { key: 'fans', label: '我的粉丝' }
 ]
 const PAGE_SIZE = 20
 const tab = ref('videos')
@@ -244,15 +301,19 @@ async function remove(row) {
   }
 }
 
-// —— 收藏 / 历史(懒加载,进入 tab 才拉取,再次进入简单刷新) ——
+// —— 收藏 / 历史 / 关注 / 粉丝(懒加载,进入 tab 才拉取,再次进入简单刷新) ——
 const fav = reactive({ list: [], total: 0, page: 1, loading: false })
 const hist = reactive({ list: [], total: 0, page: 1, loading: false })
+const follows = reactive({ list: [], total: 0, page: 1, loading: false })
+const fans = reactive({ list: [], total: 0, page: 1, loading: false })
 
 function switchTab(key) {
   if (tab.value === key) return
   tab.value = key
   if (key === 'favorites') loadFavorites()
   else if (key === 'history') loadHistory()
+  else if (key === 'follows') loadFollows()
+  else if (key === 'fans') loadFans()
 }
 
 async function fetchPage(state, url) {
@@ -267,6 +328,8 @@ async function fetchPage(state, url) {
 }
 const loadFavorites = () => fetchPage(fav, '/my/videos/favorites')
 const loadHistory = () => fetchPage(hist, '/my/videos/history')
+const loadFollows = () => fetchPage(follows, `/users/${auth.user.id}/follows`)
+const loadFans = () => fetchPage(fans, `/users/${auth.user.id}/fans`)
 
 function goPage(state, page, loader) {
   state.page = page
@@ -296,6 +359,15 @@ function statusHint(s) {
   return { AUTO_SCREENING: '正在抽帧检测,约 1 分钟', TRANSCODING: '正在转码 HLS,请稍候', UNDER_REVIEW: '管理员审核中' }[s] || ''
 }
 function fmtCount(n) { return n >= 10000 ? `${(n / 10000).toFixed(1)}万` : String(n || 0) }
+
+/** 关注/粉丝行:头像兜底取昵称或用户名首字 */
+function avatarChar(row) {
+  return (row.nickname || row.username || 'U').slice(0, 1).toUpperCase()
+}
+
+function fmtDate(d) {
+  return d ? new Date(d).toLocaleDateString('zh-CN') : ''
+}
 
 /** 秒 → m:ss / h:mm:ss */
 function fmtPos(sec) {
@@ -363,6 +435,16 @@ function dotClass(s) {
 
 .poster { width: 120px; aspect-ratio: 16 / 9; flex: none; object-fit: cover; border-radius: 10px; background: #ececf0; }
 .poster-placeholder { display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); font-size: 12px; }
+
+/* 关注/粉丝行的圆形头像 */
+.u-avatar {
+  flex: none; width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+  background: linear-gradient(150deg, var(--accent), #5ac8fa);
+}
+.u-avatar-fallback {
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 18px; font-weight: 600;
+}
 
 .row-main { flex: 1; min-width: 0; }
 .row-title { font-size: 16px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color 0.2s var(--ease); }

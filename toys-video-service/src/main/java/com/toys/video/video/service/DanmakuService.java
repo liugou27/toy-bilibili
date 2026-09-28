@@ -2,6 +2,8 @@ package com.toys.video.video.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.toys.video.api.enums.VideoStatus;
+import com.toys.video.api.feign.UserInternalClient;
+import com.toys.video.common.api.R;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.video.dto.DanmakuItem;
@@ -33,6 +35,7 @@ public class DanmakuService {
 
     private final DanmakuMapper danmakuMapper;
     private final VideoMapper videoMapper;
+    private final UserInternalClient userInternalClient;
     private final SensitiveWordHolder sensitiveWordHolder;
 
     /** 发弹幕:视频必须存在,timeSec≥0,正文非空、≤100 字且不命中敏感词。 */
@@ -42,6 +45,7 @@ public class DanmakuService {
         if (timeSec == null || timeSec < 0) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "播放位置不合法");
         }
+        requireNotMuted(userId);
         requireVideo(videoId);
         Danmaku danmaku = new Danmaku();
         danmaku.setVideoId(videoId);
@@ -83,6 +87,20 @@ public class DanmakuService {
             throw BizException.of(ErrorCode.PARAM_INVALID, "内容包含违规词汇");
         }
         return trimmed;
+    }
+
+    /** 发言前提:账号未被禁言;user-service 调用失败时放行,降级不误伤。 */
+    private void requireNotMuted(Long userId) {
+        R<UserInternalClient.PunishStatus> resp;
+        try {
+            resp = userInternalClient.punish(userId);
+        } catch (Exception e) {
+            log.warn("check mute status failed, allow posting: {}", e.getMessage());
+            return;
+        }
+        if (resp != null && resp.isSuccess() && resp.data() != null && resp.data().muted()) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "账号已被禁言,暂时无法发言");
+        }
     }
 
     /** 弹幕前提:视频存在且已发布;未发布视频不可发/读弹幕。 */

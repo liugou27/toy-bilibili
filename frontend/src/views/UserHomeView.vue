@@ -29,6 +29,13 @@
             总播放 {{ fmtCount(profile.totalPlayCount) }}
           </p>
         </div>
+        <div v-if="!isSelf" class="banner-side">
+          <button v-if="auth.user" class="follow-pill" :class="{ 'is-followed': followed }"
+                  :disabled="followBusy" @click="toggleFollow">
+            {{ followed ? '已关注' : '关注' }}
+          </button>
+          <p v-if="followerCount != null" class="follower-count">{{ fmtCount(followerCount) }} 粉丝</p>
+        </div>
       </section>
 
       <!-- 投稿网格 -->
@@ -84,11 +91,16 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import http from '../api.js'
+import { auth } from '../auth.js'
 
 const props = defineProps({
   id: { type: [String, Number], required: true }
 })
+
+const route = useRoute()
+const router = useRouter()
 
 const profile = ref(null)
 const profileLoading = ref(true)
@@ -100,6 +112,11 @@ const videosLoading = ref(true)
 const query = reactive({ page: 1, size: 12 })
 
 const uploaderId = computed(() => props.id)
+
+const followed = ref(false)
+const followBusy = ref(false)
+const followerCount = ref(null)
+const isSelf = computed(() => String(auth.user?.id) === String(uploaderId.value))
 
 async function loadProfile() {
   profileLoading.value = true
@@ -131,10 +148,54 @@ async function loadVideos() {
   }
 }
 
+// —— 关注态 / 粉丝数 ——
+async function loadFollowState() {
+  followed.value = false
+  followerCount.value = null
+  if (auth.user && !isSelf.value) {
+    try {
+      followed.value = await http.get(`/users/${uploaderId.value}/followed`)
+    } catch {
+      // 状态拉取失败按未关注展示,点击关注时以后端结果为准
+    }
+  }
+  try {
+    followerCount.value = (await http.get(`/users/${uploaderId.value}/stats`)).follower
+  } catch {
+    // 统计失败则不展示粉丝数
+  }
+}
+
+async function toggleFollow() {
+  if (!auth.user) {
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
+    return
+  }
+  if (followBusy.value) return
+  followBusy.value = true
+  const next = !followed.value
+  const delta = next ? 1 : -1
+  followed.value = next
+  if (followerCount.value != null) followerCount.value += delta
+  try {
+    if (next) {
+      await http.post(`/users/${uploaderId.value}/follow`)
+    } else {
+      await http.delete(`/users/${uploaderId.value}/follow`)
+    }
+  } catch {
+    followed.value = !next
+    if (followerCount.value != null) followerCount.value -= delta
+  } finally {
+    followBusy.value = false
+  }
+}
+
 function reload() {
   query.page = 1
   loadProfile()
   loadVideos()
+  loadFollowState()
   scrollTop()
 }
 
@@ -155,6 +216,7 @@ onMounted(() => {
   document.title = 'UP主 · toys-video'
   loadProfile()
   loadVideos()
+  loadFollowState()
 })
 
 onBeforeUnmount(() => {
@@ -252,6 +314,32 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 .banner-stats .dot { margin: 0 10px; color: var(--text-tertiary); }
+
+.banner-side { margin-left: auto; flex: none; text-align: center; }
+.follow-pill {
+  min-width: 88px;
+  padding: 8px 22px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 113, 227, 0.28);
+  transition: background 0.25s var(--ease), color 0.25s var(--ease),
+    box-shadow 0.25s var(--ease), transform 0.2s var(--ease), opacity 0.2s var(--ease);
+}
+.follow-pill:hover { transform: translateY(-1px); }
+.follow-pill:active { transform: scale(0.97); }
+.follow-pill:disabled { opacity: 0.6; cursor: default; transform: none; }
+.follow-pill.is-followed {
+  background: rgba(120, 120, 128, 0.12);
+  color: var(--text-secondary);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.follower-count { margin: 8px 0 0; font-size: 12px; color: var(--text-tertiary); }
 
 .banner-sk-avatar {
   flex-shrink: 0;

@@ -9,19 +9,24 @@ import com.toys.video.api.feign.VideoInternalClient;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.moderation.entity.ModerationReport;
+import com.toys.video.moderation.entity.ViolationSample;
+import com.toys.video.moderation.feign.UserPunishClient;
 import com.toys.video.moderation.mapper.ModerationReportMapper;
 import com.toys.video.moderation.risk.RiskEvaluateClient;
 import com.toys.video.common.text.SensitiveWordFilter;
+import com.toys.video.moderation.util.PHashUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
-/** 审核领域服务:机审结果落库 + 状态回写 + 人工审核动作。 */
+/** 审核领域服务:机审结果落库 + 状态回写 + 违规上报闭环 + 人工审核动作。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -31,14 +36,20 @@ public class ModerationService {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
+    /** 违规类型 → 用户可见文案(拒绝原因展示用)。 */
+    private static final Map<String, String> TYPE_LABELS = Map.of(
+            "POLITIC", "涉政", "PORN", "色情", "VULGAR", "恶俗", "AD", "广告", "OTHER", "其他");
+
     private final ModerationReportMapper reportMapper;
     private final AutoScreenService autoScreenService;
     private final VideoInternalClient videoInternalClient;
     private final SensitiveWordService sensitiveWordService;
+    private final ViolationSampleService violationSampleService;
     private final RiskEvaluateClient riskEvaluateClient;
+    private final UserPunishClient userPunishClient;
 
     /** 事件触发:先文本机审(标题/简介),再画面机审并推进状态。状态回写失败(2105)视为重复/过期投递,幂等跳过。 */
-    public void moderate(Long videoId, String objectKey, String title, String description) {
+    public void moderate(Long videoId, String objectKey, Long ownerId, String title, String description) {
         ModerationReport existing = reportMapper.selectOne(new LambdaQueryWrapper<ModerationReport>()
                 .eq(ModerationReport::getVideoId, videoId));
         if (existing != null) {
@@ -79,9 +90,12 @@ public class ModerationService {
             }
         }
 
-        // 风控评级:组装文本/画面机审结果调 risk-service 打分定级,verdict 由评级映射;
-        // 服务不可用时降级为本地旧规则(报告标记 riskDegraded)
-        RiskOutcome risk = assessRisk(rejectHits, reviewHits, screenResult);
+        // 风控评级:组装文本/画面机审结果 + 文本类别汇总 + 皮肤指标 + 黑样本命中调 risk-service 打分定级,
+        // verdict 由处置动作映射;服务不可用时降级为本地旧规则(报告标记 riskDegraded)
+        Map<String, Integer> textCategories = sensitiveWordService.countTextCategories(rejectHits, reviewHits);
+        List<RiskEvaluateClient.BlacklistHit> blacklistHits =
+                screenResult == null ? List.of() : matchBlacklistSamples(screenResult);
+        RiskOutcome risk = assessRisk(rejectHits, reviewHits, screenResult, textCategories, blacklistHits);
         String verdict = risk.verdict();
 
         ModerationReport report = new ModerationReport();
@@ -91,13 +105,22 @@ public class ModerationService {
         report.setRiskScore(risk.score());
         report.setRiskLevel(risk.level());
         boolean autoReject = AUTO_FAIL_ACTIONS.contains(verdict);
+        // 最高分违规类型:拒绝文案与违规上报按此定型(降级时为 null)
+        String violationType = topViolationType(risk);
         // 硬失败自动拒绝:报告直接终态,不再进人工队列
         report.setDecision(autoReject ? "REJECTED" : "PENDING");
         String rejectReason = null;
         if (autoReject) {
-            rejectReason = textFail
-                    ? "机审未通过:文本包含违规内容(" + String.join("、", rejectHits) + ")"
-                    : "机审自动拒绝:内容不合规或文件异常";
+            if (textFail) {
+                String words = String.join("、", rejectHits);
+                rejectReason = violationType != null
+                        ? "机审未通过:涉嫌违规(" + typeLabel(violationType) + "),文本包含违规内容(" + words + ")"
+                        : "机审未通过:文本包含违规内容(" + words + ")";
+            } else {
+                rejectReason = violationType != null
+                        ? "机审自动拒绝:涉嫌违规(" + typeLabel(violationType) + ")"
+                        : "机审自动拒绝:内容不合规或文件异常";
+            }
             report.setRejectReason(rejectReason);
             report.setDecidedAt(LocalDateTime.now());
         }
@@ -114,33 +137,44 @@ public class ModerationService {
                 textFail ? null : longOrNull(meta.path("duration_sec")),
                 textFail ? null : intOrNull(meta.path("width")),
                 textFail ? null : intOrNull(meta.path("height")),
-                textFail ? rejectReason
-                        : (autoReject ? "机审未通过:内容不合规或文件异常" : null));
+                autoReject ? rejectReason : null);
         applyStatus(videoId, update);
-        log.info("video {} auto-screened: {} -> {} (risk score={} level={} degraded={})",
-                videoId, verdict, update.target(), risk.score(), risk.level(), risk.degraded());
+        // 违规闭环:自动拒绝即上报 user-service 记用户违规(计数/禁言/封禁由其裁决);失败仅告警不影响拒绝结论
+        if (autoReject) {
+            reportUserViolation(ownerId, videoId, violationType, risk);
+        }
+        log.info("video {} auto-screened: {} -> {} (risk score={} level={} action={} type={} degraded={})",
+                videoId, verdict, update.target(), risk.score(), risk.level(), risk.action(),
+                violationType, risk.degraded());
     }
 
     // ==================== 风控评级(risk-service) ====================
 
-    /** 评级结论:score/level/items 仅在评级成功时非空,verdict 恒有值。 */
-    private record RiskOutcome(Integer score, String level,
-                               List<RiskEvaluateClient.RiskItem> items, boolean degraded, String verdict) {
+    /** 评级结论:score/level/action/items/violations 仅在评级成功时非空,verdict 恒有值。 */
+    private record RiskOutcome(Integer score, String level, String action,
+                               List<RiskEvaluateClient.RiskItem> items,
+                               List<RiskEvaluateClient.Violation> violations,
+                               boolean degraded, String verdict) {
     }
 
     /**
-     * 调 risk-service 打分,评级映射机审结论:REJECT→AUTO_FAIL、REVIEW→AUTO_SUSPECT、PASS→AUTO_PASS。
+     * 调 risk-service 打分,处置动作映射机审结论:BLOCK→AUTO_FAIL、REVIEW→AUTO_SUSPECT、PASS→AUTO_PASS。
      * 调用失败(兜底抛 SERVICE_UNAVAILABLE 等)降级:本地沿用旧规则——文本 REJECT→AUTO_FAIL,
      * 否则直接采画面机审结论(AUTO_FAIL/AUTO_SUSPECT/AUTO_PASS)。
      */
-    private RiskOutcome assessRisk(List<String> rejectHits, List<String> reviewHits, JsonNode screenResult) {
+    private RiskOutcome assessRisk(List<String> rejectHits, List<String> reviewHits, JsonNode screenResult,
+                                   Map<String, Integer> textCategories,
+                                   List<RiskEvaluateClient.BlacklistHit> blacklistHits) {
         try {
-            var resp = riskEvaluateClient.evaluate(
-                    new RiskEvaluateClient.RiskRequest(rejectHits, reviewHits, screenResult));
+            JsonNode meta = screenResult == null ? null : screenResult.path("meta");
+            var resp = riskEvaluateClient.evaluate(new RiskEvaluateClient.RiskRequest(
+                    rejectHits, reviewHits, screenResult,
+                    doubleOrNull(meta, "avg_skin_ratio"), doubleOrNull(meta, "max_skin_ratio"),
+                    textOrNull(meta, "phash"), blacklistHits, textCategories));
             if (resp != null && resp.isSuccess() && resp.data() != null) {
                 var result = resp.data();
-                return new RiskOutcome(result.score(), result.level(), result.riskItems(),
-                        false, mapVerdict(result.level()));
+                return new RiskOutcome(result.score(), result.level(), result.action(), result.riskItems(),
+                        result.violations(), false, mapVerdict(result.action(), result.level()));
             }
             log.warn("risk-service evaluate unexpected response: {}", resp);
             throw new BizException(ErrorCode.INTERNAL_ERROR, "风控评级响应异常");
@@ -149,21 +183,96 @@ public class ModerationService {
             String verdict = !rejectHits.isEmpty() || screenResult == null
                     ? "AUTO_FAIL"
                     : screenResult.path("verdict").asText("AUTO_FAIL");
-            return new RiskOutcome(null, null, List.of(), true, verdict);
+            return new RiskOutcome(null, null, null, List.of(), List.of(), true, verdict);
         }
     }
 
-    /** 评级映射机审结论:未知评级按可疑处理,转人工复核兜底。 */
-    private static String mapVerdict(String level) {
-        return switch (level == null ? "" : level) {
-            case "REJECT" -> "AUTO_FAIL";
+    /** 处置动作映射机审结论:优先 action(BLOCK 沿用 REJECT 语义),未知按可疑处理转人工复核兜底。 */
+    private static String mapVerdict(String action, String level) {
+        String a = action != null ? action
+                : ("REJECT".equals(level) ? "BLOCK" : level == null ? "" : level);
+        return switch (a) {
+            case "BLOCK" -> "AUTO_FAIL";
             case "REVIEW" -> "AUTO_SUSPECT";
             case "PASS" -> "AUTO_PASS";
             default -> "AUTO_SUSPECT";
         };
     }
 
-    /** 机审报告 JSON:文本硬失败走文本报告,否则保留画面机审结果;叠加风控评级字段。 */
+    /** 黑样本匹配:画面 phash 与全量样本逐个算汉明距离,≤阈值放入 blacklistHits(无 phash/空库返回空)。 */
+    private List<RiskEvaluateClient.BlacklistHit> matchBlacklistSamples(JsonNode screenResult) {
+        Long phash = PHashUtil.fromHex(screenResult.path("meta").path("phash").asText(null));
+        if (phash == null) {
+            return List.of();
+        }
+        List<RiskEvaluateClient.BlacklistHit> hits = new ArrayList<>();
+        for (ViolationSample sample : violationSampleService.current()) {
+            int distance = PHashUtil.hamming(phash, sample.getPhash());
+            if (distance <= PHashUtil.HAMMING_THRESHOLD) {
+                hits.add(new RiskEvaluateClient.BlacklistHit(
+                        sample.getType(), PHashUtil.toHex(sample.getPhash()), distance));
+            }
+        }
+        if (!hits.isEmpty()) {
+            log.info("blacklist matched for phash {}: {} hit(s)", PHashUtil.toHex(phash), hits.size());
+        }
+        return hits;
+    }
+
+    /** 最高分违规的类型(violations 已按分降序);降级或无违规时为 null。 */
+    private static String topViolationType(RiskOutcome risk) {
+        if (risk.degraded() || risk.violations() == null || risk.violations().isEmpty()) {
+            return null;
+        }
+        return risk.violations().get(0).type();
+    }
+
+    /** 违规类型 → 用户可见文案。 */
+    private static String typeLabel(String type) {
+        return TYPE_LABELS.getOrDefault(type, "其他");
+    }
+
+    // ==================== 违规上报闭环(user-service) ====================
+
+    /**
+     * 违规上报:action=BLOCK 的机审拒绝即调 user-service 记用户违规(计数/禁言/封禁由其裁决)。
+     * 调用必须 try/catch:失败仅告警降级(不记违规),视频照常拒绝,不阻断审核主流程。
+     */
+    private void reportUserViolation(Long userId, Long videoId, String violationType, RiskOutcome risk) {
+        if (userId == null) {
+            log.warn("video {} auto-rejected but owner unknown, skip violation report", videoId);
+            return;
+        }
+        String type = violationType != null ? violationType : "OTHER";
+        String reason = buildViolationReason(risk);
+        try {
+            var resp = userPunishClient.reportViolation(
+                    new UserPunishClient.ViolationReport(userId, type, reason, videoId));
+            if (resp != null && resp.isSuccess() && resp.data() != null) {
+                var data = resp.data();
+                log.info("violation reported: user={} video={} type={} count={} muted={} banned={}",
+                        userId, videoId, type, data.violationCount(), data.muted(), data.banned());
+            } else {
+                log.warn("violation report unexpected response: user={} video={} resp={}", userId, videoId, resp);
+            }
+        } catch (Exception e) {
+            log.warn("violation report failed (degrade: skip record, video still rejected): user={} video={} cause={}",
+                    userId, videoId, e.getMessage());
+        }
+    }
+
+    /** 违规原因:汇总全部违规项证据(按分降序,带类型前缀),截断 200 字;降级时给通用文案。 */
+    private static String buildViolationReason(RiskOutcome risk) {
+        if (risk.degraded() || risk.violations() == null || risk.violations().isEmpty()) {
+            return "机审自动拒绝:内容不合规";
+        }
+        String reason = risk.violations().stream()
+                .map(v -> "[" + v.type() + "] " + v.evidence())
+                .collect(Collectors.joining(";"));
+        return reason.length() > 200 ? reason.substring(0, 200) : reason;
+    }
+
+    /** 机审报告 JSON:文本硬失败走文本报告,否则保留画面机审结果;叠加风控评级字段(含 action 与违规明细)。 */
     private String buildReportJson(boolean textFail, List<String> rejectHits, List<String> reviewHits,
                                    JsonNode screenResult, RiskOutcome risk) {
         ObjectNode node;
@@ -187,7 +296,9 @@ public class ModerationService {
         } else {
             node.put("riskScore", risk.score());
             node.put("riskLevel", risk.level());
+            node.put("action", risk.action());
             node.set("riskItems", OBJECT_MAPPER.valueToTree(risk.items()));
+            node.set("violations", OBJECT_MAPPER.valueToTree(risk.violations()));
         }
         return node.toString();
     }
@@ -384,5 +495,23 @@ public class ModerationService {
 
     private Integer intOrNull(JsonNode n) {
         return n.isMissingNode() || n.isNull() ? null : n.asInt();
+    }
+
+    /** meta 下的数值字段(皮肤占比),缺失/非数值返回 null。 */
+    private static Double doubleOrNull(JsonNode meta, String field) {
+        if (meta == null) {
+            return null;
+        }
+        JsonNode n = meta.path(field);
+        return n.isNumber() ? n.asDouble() : null;
+    }
+
+    /** meta 下的文本字段(phash),缺失/非文本返回 null。 */
+    private static String textOrNull(JsonNode meta, String field) {
+        if (meta == null) {
+            return null;
+        }
+        JsonNode n = meta.path(field);
+        return n.isTextual() ? n.asText() : null;
     }
 }

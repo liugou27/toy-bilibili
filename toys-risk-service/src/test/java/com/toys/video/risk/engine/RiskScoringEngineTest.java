@@ -3,15 +3,17 @@ package com.toys.video.risk.engine;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.toys.video.risk.dto.BlacklistHit;
 import com.toys.video.risk.dto.RiskRequest;
 import com.toys.video.risk.dto.RiskResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 评级引擎单测:分级边界、REJECT 文本直满、组合加权、空输入。 */
+/** 评级引擎单测:分级边界、REJECT 文本直满、组合加权、空输入、皮肤阈值边界、黑样本、类型分桶、action 三档。 */
 class RiskScoringEngineTest {
 
     private final RiskScoringEngine engine = new RiskScoringEngine();
@@ -146,6 +148,187 @@ class RiskScoringEngineTest {
         RiskResult result = engine.evaluate(new RiskRequest(List.of(), List.of(), screen));
         assertThat(result.score()).isZero();
         assertThat(result.level()).isEqualTo("PASS");
+    }
+
+    // ==================== 皮肤占比阈值边界 ====================
+
+    @Test
+    void 平均皮肤占比超过045记PORN70分BLOCK() {
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of(), List.of(), null, 0.46, 0.5, null, null, null));
+        assertThat(result.score()).isEqualTo(70);
+        assertThat(result.action()).isEqualTo("BLOCK");
+        assertThat(result.violations()).singleElement().satisfies(v -> {
+            assertThat(v.type()).isEqualTo("PORN");
+            assertThat(v.score()).isEqualTo(70);
+        });
+    }
+
+    @Test
+    void 最高皮肤占比超过06记PORN70分BLOCK() {
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of(), List.of(), null, 0.1, 0.61, null, null, null));
+        assertThat(result.score()).isEqualTo(70);
+        assertThat(result.action()).isEqualTo("BLOCK");
+        assertThat(result.violations()).singleElement()
+                .satisfies(v -> assertThat(v.type()).isEqualTo("PORN"));
+    }
+
+    @Test
+    void 平均皮肤占比045整落在可疑档记35分REVIEW() {
+        // 0.45 未严格大于 0.45,落入 0.30~0.45 可疑档
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of(), List.of(), null, 0.45, 0.45, null, null, null));
+        assertThat(result.score()).isEqualTo(35);
+        assertThat(result.action()).isEqualTo("REVIEW");
+        assertThat(result.violations()).singleElement().satisfies(v -> {
+            assertThat(v.type()).isEqualTo("PORN");
+            assertThat(v.score()).isEqualTo(35);
+        });
+    }
+
+    @Test
+    void 平均皮肤占比恰030记35分REVIEW() {
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of(), List.of(), null, 0.30, 0.30, null, null, null));
+        assertThat(result.score()).isEqualTo(35);
+        assertThat(result.action()).isEqualTo("REVIEW");
+    }
+
+    @Test
+    void 皮肤占比低于阈值不计分() {
+        // avg=0.29 未达 0.30;max=0.60 未严格大于 0.60
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of(), List.of(), null, 0.29, 0.60, null, null, null));
+        assertThat(result.score()).isZero();
+        assertThat(result.action()).isEqualTo("PASS");
+        assertThat(result.violations()).isEmpty();
+    }
+
+    // ==================== 黑样本命中 ====================
+
+    @Test
+    void 黑样本命中记该类型80分BLOCK() {
+        List<BlacklistHit> hits = List.of(new BlacklistHit("PORN", "0123456789abcdef", 5));
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of(), List.of(), null, null, null, "0123456789abcdea", hits, null));
+        assertThat(result.score()).isEqualTo(80);
+        assertThat(result.action()).isEqualTo("BLOCK");
+        assertThat(result.violations()).singleElement().satisfies(v -> {
+            assertThat(v.type()).isEqualTo("PORN");
+            assertThat(v.score()).isEqualTo(80);
+            assertThat(v.evidence()).contains("汉明距离 5");
+        });
+    }
+
+    @Test
+    void 同类型多个黑样本只计一次80分() {
+        List<BlacklistHit> hits = List.of(
+                new BlacklistHit("PORN", "0123456789abcdef", 3),
+                new BlacklistHit("PORN", "fedcba9876543210", 8));
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of(), List.of(), null, null, null, "0123456789abcdea", hits, null));
+        assertThat(result.score()).isEqualTo(80);
+        assertThat(result.violations()).singleElement()
+                .satisfies(v -> assertThat(v.evidence()).contains("2 个黑样本"));
+    }
+
+    @Test
+    void 黑样本不同类型各自计80分() {
+        List<BlacklistHit> hits = List.of(
+                new BlacklistHit("POLITIC", "0123456789abcdef", 2),
+                new BlacklistHit("PORN", "fedcba9876543210", 9));
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of(), List.of(), null, null, null, "0123456789abcdea", hits, null));
+        assertThat(result.score()).isEqualTo(100);
+        assertThat(result.violations()).hasSize(2)
+                .allSatisfy(v -> assertThat(v.score()).isEqualTo(80));
+    }
+
+    // ==================== 文本类型分桶 ====================
+
+    @Test
+    void 文本类别汇总按类型分桶累计() {
+        // PORN 2 个 REVIEW 词(15*2=30)+ VULGAR 1 个 REVIEW 词(15)= 45 → REVIEW
+        Map<String, Integer> categories = Map.of("PORN:REVIEW", 2, "VULGAR:REVIEW", 1);
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of(), List.of("词甲", "词乙", "词丙"), null, null, null, null, null, categories));
+        assertThat(result.score()).isEqualTo(45);
+        assertThat(result.action()).isEqualTo("REVIEW");
+        assertThat(result.violations()).hasSize(2);
+        assertThat(result.violations().get(0).type()).isEqualTo("PORN");
+        assertThat(result.violations().get(0).score()).isEqualTo(30);
+    }
+
+    @Test
+    void REJECT级类别桶任一命中直接满分BLOCK() {
+        Map<String, Integer> categories = Map.of("POLITIC:REJECT", 2);
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of("词甲", "词乙"), List.of(), null, null, null, null, null, categories));
+        assertThat(result.score()).isEqualTo(100);
+        assertThat(result.action()).isEqualTo("BLOCK");
+        assertThat(result.level()).isEqualTo("REJECT");
+        assertThat(result.violations()).singleElement().satisfies(v -> {
+            assertThat(v.type()).isEqualTo("POLITIC");
+            assertThat(v.score()).isEqualTo(80);
+        });
+    }
+
+    @Test
+    void REJECT级单类型桶内封顶100() {
+        Map<String, Integer> categories = Map.of("PORN:REJECT", 4);
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of("a", "b", "c", "d"), List.of(), null, null, null, null, null, categories));
+        assertThat(result.score()).isEqualTo(100);
+        assertThat(result.violations()).singleElement()
+                .satisfies(v -> assertThat(v.score()).isEqualTo(100));
+    }
+
+    @Test
+    void 未知类型归入OTHER桶() {
+        Map<String, Integer> categories = Map.of("WEIRD:REJECT", 1);
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of("a"), List.of(), null, null, null, null, null, categories));
+        assertThat(result.score()).isEqualTo(100);
+        assertThat(result.violations()).singleElement()
+                .satisfies(v -> assertThat(v.type()).isEqualTo("OTHER"));
+    }
+
+    // ==================== action 三档与 violations 排序 ====================
+
+    @Test
+    void action三档与level对应() {
+        assertThat(RiskScoringEngine.actionFor(70)).isEqualTo("BLOCK");
+        assertThat(RiskScoringEngine.actionFor(69)).isEqualTo("REVIEW");
+        assertThat(RiskScoringEngine.actionFor(30)).isEqualTo("REVIEW");
+        assertThat(RiskScoringEngine.actionFor(29)).isEqualTo("PASS");
+        assertThat(RiskScoringEngine.actionFor(0)).isEqualTo("PASS");
+        // BLOCK 对应旧 REJECT 展示语义
+        assertThat(RiskScoringEngine.levelFor(70)).isEqualTo("REJECT");
+    }
+
+    @Test
+    void violations按分降序排列() {
+        // 皮肤 PORN 35 + 2 个 REVIEW 词 VULGAR 30 = 65 → REVIEW,PORN 在前
+        RiskResult result = engine.evaluate(new RiskRequest(
+                List.of(), List.of("词甲", "词乙"), null, 0.35, 0.4, null, null, null));
+        assertThat(result.score()).isEqualTo(65);
+        assertThat(result.violations()).hasSize(2);
+        assertThat(result.violations().get(0).type()).isEqualTo("PORN");
+        assertThat(result.violations().get(0).score()).isEqualTo(35);
+        assertThat(result.violations().get(1).type()).isEqualTo("VULGAR");
+        assertThat(result.violations().get(1).score()).isEqualTo(30);
+    }
+
+    @Test
+    void 画面规则归入OTHER违规桶() {
+        JsonNode screen = screen(0.85, false, true, 1920, 1080, 60.0);
+        RiskResult result = engine.evaluate(new RiskRequest(List.of(), List.of(), screen));
+        assertThat(result.score()).isEqualTo(60);
+        assertThat(result.violations()).singleElement().satisfies(v -> {
+            assertThat(v.type()).isEqualTo("OTHER");
+            assertThat(v.score()).isEqualTo(60);
+        });
     }
 
     // ==================== 测试工具 ====================

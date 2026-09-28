@@ -26,6 +26,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,13 +36,17 @@ class DanmakuServiceTest {
     private DanmakuMapper danmakuMapper;
     @Mock
     private VideoMapper videoMapper;
+    @Mock
+    private com.toys.video.api.feign.UserInternalClient userInternalClient;
 
     private DanmakuService danmakuService;
 
     @BeforeEach
     void setUp() {
+        lenient().when(userInternalClient.punish(org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(R.ok(new com.toys.video.api.feign.UserInternalClient.PunishStatus(false, false, 0)));
         danmakuService = new DanmakuService(
-            danmakuMapper, videoMapper, sensitiveWordHolder(Map.of()));
+            danmakuMapper, videoMapper, userInternalClient, sensitiveWordHolder(Map.of()));
     }
 
     /** 构造已从 moderation-service 快照加载指定词库的 holder。 */
@@ -56,7 +61,7 @@ class DanmakuServiceTest {
 
     @Test
     void post_rejectsSensitiveWord() {
-        danmakuService = new DanmakuService(danmakuMapper, videoMapper,
+        danmakuService = new DanmakuService(danmakuMapper, videoMapper, userInternalClient,
                 sensitiveWordHolder(Map.of("赌博", SensitiveWordFilter.LEVEL_REJECT)));
         when(videoMapper.selectById(1L)).thenReturn(publishedVideo());
         BizException e = assertThrows(BizException.class,

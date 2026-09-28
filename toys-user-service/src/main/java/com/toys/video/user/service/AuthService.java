@@ -39,6 +39,7 @@ public class AuthService implements ApplicationRunner {
     private final JwtUtil jwtUtil;
     private final LoginGuard loginGuard;
     private final UsernameBloomService usernameBloom;
+    private final PunishService punishService;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
     @org.springframework.beans.factory.annotation.Value("${toys.jwt.ttl-seconds:604800}")
     private long jwtTtlSeconds;
@@ -76,6 +77,8 @@ public class AuthService implements ApplicationRunner {
             throw BizException.of(ErrorCode.BAD_CREDENTIALS);
         }
         loginGuard.clear(req.username());
+        // 封禁拦截放在凭证校验之后:避免向持有错误密码的请求泄露封禁状态
+        punishService.checkLoginAllowed(user);
         String token = jwtUtil.issue(user.getId(), user.getRole());
         registerToken(token);
         return new LoginResponse(token, toInfo(user));

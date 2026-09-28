@@ -101,6 +101,52 @@
       </div>
     </el-card>
 
+    <el-card shadow="never" class="user-card">
+      <template #header>
+        <div class="card-bar">
+          <span class="card-title">用户管理</span>
+          <el-input v-model="uKeyword" class="sw-search" placeholder="搜索用户名" clearable @input="onUserKeywordInput" />
+        </div>
+      </template>
+      <el-empty v-if="!users.length && !uLoading" description="没有匹配的用户" />
+      <el-table v-else :data="users" v-loading="uLoading">
+        <el-table-column label="用户名" min-width="180">
+          <template #default="{ row }"><span class="sw-word">{{ row.username }}</span></template>
+        </el-table-column>
+        <el-table-column label="角色" width="110">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.role === 'ADMIN' ? 'danger' : 'info'">
+              {{ row.role === 'ADMIN' ? '管理员' : '用户' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="violationCount" label="违规次数" width="100" align="center" />
+        <el-table-column label="封禁状态" width="110">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.banned ? 'danger' : 'success'">
+              {{ row.banned ? '已封禁' : '正常' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="120">
+          <template #default="{ row }">
+            <el-button size="small" round :type="row.banned ? 'success' : 'danger'" plain
+                       :loading="uBusyId === row.id" :disabled="uBusyId !== null && uBusyId !== row.id"
+                       @click="toggleBan(row)">
+              {{ row.banned ? '解封' : '封禁' }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="uTotal > U_SIZE" class="sw-foot">
+        <el-pagination
+          size="small" background layout="prev, pager, next"
+          :total="uTotal" :page-size="U_SIZE"
+          v-model:current-page="uPage" @current-change="loadUsers"
+        />
+      </div>
+    </el-card>
+
     <el-dialog v-model="dialog" title="审核详情" width="720px" destroy-on-close @closed="destroyPlayer">
       <div v-if="detail" v-loading="detailLoading">
         <video ref="reviewPlayer" :src="detail.presignedUrl" controls class="review-player"></video>
@@ -234,6 +280,15 @@ const busyId = ref(null)
 const wordForm = ref({ word: '', level: 'REJECT', category: '' })
 let kwTimer = null
 
+const U_SIZE = 10
+const users = ref([])
+const uTotal = ref(0)
+const uPage = ref(1)
+const uKeyword = ref('')
+const uLoading = ref(false)
+const uBusyId = ref(null)
+let uKwTimer = null
+
 const videoTitle = computed(() => {
   const item = queue.value.find((q) => q.videoId === currentVideoId)
   return item?.title || ''
@@ -286,6 +341,49 @@ function onKeywordInput() {
     wPage.value = 1
     loadWords()
   }, 300)
+}
+
+async function loadUsers() {
+  uLoading.value = true
+  try {
+    const data = await http.get('/admin/users', {
+      params: { page: uPage.value, size: U_SIZE, keyword: uKeyword.value.trim() || undefined }
+    })
+    users.value = data.list
+    uTotal.value = data.total
+  } finally {
+    uLoading.value = false
+  }
+}
+
+function onUserKeywordInput() {
+  clearTimeout(uKwTimer)
+  uKwTimer = setTimeout(() => {
+    uPage.value = 1
+    loadUsers()
+  }, 300)
+}
+
+async function toggleBan(row) {
+  const banning = !row.banned
+  const label = banning ? '封禁' : '解封'
+  try {
+    await ElMessageBox.confirm(
+      `确定${label}用户「${row.username}」吗?${banning ? '封禁后该用户将无法登录与发言。' : ''}`,
+      `${label}用户`,
+      { type: 'warning', confirmButtonText: label, cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  uBusyId.value = row.id
+  try {
+    await http.post(`/admin/users/${row.id}/${banning ? 'ban' : 'unban'}`)
+    ElMessage.success(`已${label}`)
+    loadUsers()
+  } finally {
+    uBusyId.value = null
+  }
 }
 
 function openAdd() {
@@ -495,11 +593,13 @@ function fmtTime(d) {
 onMounted(() => {
   load()
   loadWords()
+  loadUsers()
   pollTimer = setInterval(load, 10000)
 })
 onBeforeUnmount(() => {
   pollTimer && clearInterval(pollTimer)
   clearTimeout(kwTimer)
+  clearTimeout(uKwTimer)
 })
 </script>
 
@@ -558,6 +658,7 @@ onBeforeUnmount(() => {
 .risk-item-weight { flex: none; font-weight: 600; color: var(--warning); }
 
 .sw-card { margin-top: 24px; }
+.user-card { margin-top: 24px; }
 .sw-head-actions { display: flex; align-items: center; gap: 8px; }
 .sw-search { width: 180px; }
 .sw-search :deep(.el-input__wrapper) { border-radius: var(--radius-button); }

@@ -20,6 +20,18 @@ public class UserInternalClientFallbackFactory implements FallbackFactory<UserIn
                 log.warn("user-service batch fallback: {}", cause.getMessage());
                 return R.ok(List.of());
             }
+
+            @Override
+            public R<PunishStatus> punish(Long id) {
+                log.warn("user-service punish fallback: {}", cause.getMessage());
+                return R.ok(new PunishStatus(false, false, 0));
+            }
+
+            @Override
+            public R<PunishStatus> reportViolation(ViolationReport report) {
+                log.warn("user-service reportViolation fallback: {}", cause.getMessage());
+                return R.ok(new PunishStatus(false, false, 0));
+            }
         };
     }
 }

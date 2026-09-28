@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.toys.video.api.enums.VideoStatus;
 import com.toys.video.api.feign.UserInternalClient;
 import com.toys.video.common.api.PageResult;
+import com.toys.video.common.api.R;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.video.dto.CommentItem;
@@ -44,6 +45,7 @@ public class CommentService {
     /** 发评论:视频必须存在,正文非空、≤500 字且不命中敏感词。 */
     @com.toys.video.common.idempotent.Idempotent(scene = "comment", key = "#videoId + ':' + #content", windowSeconds = 10, message = "评论已提交,请勿重复发送")
     public CommentItem post(Long videoId, Long userId, String content) {
+        requireNotMuted(userId);
         requireVideo(videoId);
         Comment comment = new Comment();
         comment.setVideoId(videoId);
@@ -109,6 +111,20 @@ public class CommentService {
             throw BizException.of(ErrorCode.PARAM_INVALID, "内容包含违规词汇");
         }
         return trimmed;
+    }
+
+    /** 发言前提:账号未被禁言;user-service 调用失败时放行,降级不误伤。 */
+    private void requireNotMuted(Long userId) {
+        R<UserInternalClient.PunishStatus> resp;
+        try {
+            resp = userInternalClient.punish(userId);
+        } catch (Exception e) {
+            log.warn("check mute status failed, allow posting: {}", e.getMessage());
+            return;
+        }
+        if (resp != null && resp.isSuccess() && resp.data() != null && resp.data().muted()) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "账号已被禁言,暂时无法发言");
+        }
     }
 
     /** 评论前提:视频存在且已发布;未发布视频不可评论/读取评论。 */

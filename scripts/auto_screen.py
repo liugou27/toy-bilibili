@@ -8,9 +8,12 @@
 
 stdout: {"verdict": "AUTO_PASS|AUTO_SUSPECT|AUTO_FAIL",
          "checks": [{"name","passed","detail"}...],
-         "black_ratio": 0.0-1.0, "static_suspect": bool}
+         "black_ratio": 0.0-1.0, "static_suspect": bool,
+         "meta": {..., "avg_skin_ratio": 0.0-1.0, "max_skin_ratio": 0.0-1.0,
+                  "phash": "16位hex"}}
 """
 import json
+import math
 import os
 import subprocess
 import sys
@@ -28,21 +31,90 @@ BLACK_MEAN_THRESHOLD = 8.0
 BLACK_RATIO_FAIL = 0.8
 BLACK_RATIO_SUSPECT = 0.3
 STATIC_DIFF_THRESHOLD = 2.0
+PHASH_SRC_SIZE = 32      # phash 源图边长(32x32 灰度)
+PHASH_DCT_SIZE = 8       # phash DCT 块边长(池化后 8x8,输出 64bit)
 
 
 def check(name: str, passed: bool, detail: str) -> dict:
     return {"name": name, "passed": passed, "detail": detail}
 
 
-def frame_gray_mean(path: str) -> list:
-    """读取抽帧图,返回 FRAME_SIZE*FRAME_SIZE 的灰度均值矩阵的一维列表。"""
-    cmd = ["ffmpeg", "-v", "error", "-i", path, "-vf", f"scale={FRAME_SIZE}:{FRAME_SIZE}",
+def frame_gray(path: str, size: int) -> list:
+    """读取抽帧图,缩放到 size*size 输出灰度像素的一维列表。"""
+    cmd = ["ffmpeg", "-v", "error", "-i", path, "-vf", f"scale={size}:{size}",
            "-f", "rawvideo", "-pix_fmt", "gray", "-"]
     proc = subprocess.run(cmd, capture_output=True)
     if proc.returncode != 0 or not proc.stdout:
         raise RuntimeError("frame decode failed: " + proc.stderr.decode(errors="ignore")[:200])
-    raw = proc.stdout[: FRAME_SIZE * FRAME_SIZE]
+    raw = proc.stdout[: size * size]
     return list(raw)
+
+
+def frame_gray_mean(path: str) -> list:
+    """读取抽帧图,返回 FRAME_SIZE*FRAME_SIZE 的灰度均值矩阵的一维列表。"""
+    return frame_gray(path, FRAME_SIZE)
+
+
+def frame_skin_ratio(path: str) -> float:
+    """统计单帧皮肤色像素占比:ffmpeg 输出 rawvideo rgb24 后按简化肤色规则逐像素判定。"""
+    size = FRAME_SIZE
+    cmd = ["ffmpeg", "-v", "error", "-i", path, "-vf", f"scale={size}:{size}",
+           "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode != 0 or not proc.stdout:
+        raise RuntimeError("frame decode failed: " + proc.stderr.decode(errors="ignore")[:200])
+    raw = proc.stdout[: size * size * 3]
+    skin = 0
+    for i in range(0, len(raw) - 2, 3):
+        r, g, b = raw[i], raw[i + 1], raw[i + 2]
+        # 简化肤色规则:亮暖色且红色分量显著占优
+        if r > 95 and g > 40 and b > 20 and r > g and r > b and r - g > 15:
+            skin += 1
+    return skin / (size * size)
+
+
+def compute_phash(path: str) -> str:
+    """感知哈希:32x32 灰度 → 4x4 均值池化 8x8 → 扣除均值(相对 DC 分量)→ DCT-II → 低频 8x8 按符号阈值化 64bit,输出 16 位 hex。"""
+    gray = frame_gray(path, PHASH_SRC_SIZE)
+    # 4x4 均值池化:32x32 → 8x8
+    pool = []
+    for by in range(PHASH_DCT_SIZE):
+        row = []
+        for bx in range(PHASH_DCT_SIZE):
+            total = 0
+            for y in range(by * 4, by * 4 + 4):
+                base = y * PHASH_SRC_SIZE
+                for x in range(bx * 4, bx * 4 + 4):
+                    total += gray[base + x]
+            row.append(total / 16.0)
+        pool.append(row)
+    # 相对 DC:扣除整体均值,阈值化只看交流分量的符号(DC 位恒为 0)
+    mean = sum(sum(row) for row in pool) / (PHASH_DCT_SIZE * PHASH_DCT_SIZE)
+    pool = [[v - mean for v in row] for row in pool]
+
+    # 简化 DCT-II(正交基),系数 [u][v]
+    n = PHASH_DCT_SIZE
+    cos_table = [[math.cos((2 * x + 1) * u * math.pi / (2 * n)) for x in range(n)] for u in range(n)]
+    alpha = [math.sqrt(1.0 / n)] + [math.sqrt(2.0 / n)] * (n - 1)
+    dct = [[0.0] * n for _ in range(n)]
+    for u in range(n):
+        cu = cos_table[u]
+        for v in range(n):
+            cv = cos_table[v]
+            s = 0.0
+            for x in range(n):
+                px = pool[x]
+                cx = cu[x]
+                for y in range(n):
+                    s += px[y] * cx * cv[y]
+            dct[u][v] = alpha[u] * alpha[v] * s
+
+    # 64bit:低频 8x8 系数逐个与 0 比较(交流分量为正记 1),行主序拼装
+    bits = 0
+    for u in range(n):
+        for v in range(n):
+            bits = (bits << 1) | (1 if dct[u][v] > 0 else 0)
+    return f"{bits:016x}"
 
 
 def extract_frames(input_path: str, duration: float, count: int, workdir: str) -> list:
@@ -113,6 +185,11 @@ def main() -> int:
                     static_suspect = all(d < STATIC_DIFF_THRESHOLD for d in diffs)
                     if static_suspect:
                         checks.append(check("static_picture", False, "frames nearly identical"))
+                # 逐帧皮肤占比统计 + 中间帧感知哈希,供 risk-service 色情/黑样本规则使用
+                skin_ratios = [frame_skin_ratio(f) for f in frames]
+                meta["avg_skin_ratio"] = round(sum(skin_ratios) / len(skin_ratios), 4)
+                meta["max_skin_ratio"] = round(max(skin_ratios), 4)
+                meta["phash"] = compute_phash(frames[len(frames) // 2])
 
     if hard_fail or black_ratio >= BLACK_RATIO_FAIL:
         verdict = "AUTO_FAIL"

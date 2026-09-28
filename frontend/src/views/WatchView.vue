@@ -103,12 +103,16 @@
     </div>
 
     <aside class="watch-side">
-      <div v-if="detail" class="owner-card clickable" @click="goUploader(detail.ownerId)" title="查看 UP 主主页">
-        <span class="owner-avatar">{{ avatarChar(detail.ownerName) }}</span>
-        <div class="owner-body">
+      <div v-if="detail" class="owner-card">
+        <span class="owner-avatar clickable" @click="goUploader(detail.ownerId)" title="查看 UP 主主页">{{ avatarChar(detail.ownerName) }}</span>
+        <div class="owner-body clickable" @click="goUploader(detail.ownerId)" title="查看 UP 主主页">
           <span class="owner-name">{{ detail.ownerName }}</span>
-          <span class="owner-sub">{{ fmtCount(detail.playCount) }} 播放</span>
+          <span class="owner-sub">{{ fmtCount(detail.playCount) }} 播放<template v-if="followerCount != null"> · {{ fmtCount(followerCount) }} 粉丝</template></span>
         </div>
+        <button v-if="auth.user && !isSelf" class="follow-pill" :class="{ 'is-followed': followed }"
+                :disabled="followBusy" @click.stop="toggleFollow">
+          {{ followed ? '已关注' : '关注' }}
+        </button>
       </div>
       <section v-if="relatedList.length" v-reveal class="related-section reveal">
         <h2 class="related-title">相关推荐</h2>
@@ -201,11 +205,45 @@ async function load() {
   likeCount.value = Number(detail.value.likeCount || 0)
   likedByMe.value = !!detail.value.likedByMe
   favoritedByMe.value = !!detail.value.favoritedByMe
+  loadFollowState()
   if (detail.value.playbackUrl) {
     startPlayer(detail.value.playbackUrl)
   } else {
     playerError.value = true
   }
+}
+
+// —— 关注(播放页直接关注 UP 主)——
+const followed = ref(false)
+const followerCount = ref(null)
+const followBusy = ref(false)
+const isSelf = computed(() => auth.user && detail.value && String(auth.user.id) === String(detail.value.ownerId))
+
+async function loadFollowState() {
+  followed.value = false
+  followerCount.value = null
+  if (!detail.value) return
+  const id = detail.value.ownerId
+  try {
+    const stats = await http.get(`/users/${id}/stats`)
+    followerCount.value = Number(stats.follower || 0)
+    if (auth.user && !isSelf.value) {
+      followed.value = await http.get(`/users/${id}/followed`)
+    }
+  } catch { /* 资料缺失不阻塞播放 */ }
+}
+
+async function toggleFollow() {
+  if (followBusy.value) return
+  followBusy.value = true
+  const target = !followed.value
+  try {
+    if (target) await http.post(`/users/${detail.value.ownerId}/follow`)
+    else await http.delete(`/users/${detail.value.ownerId}/follow`)
+    followed.value = target
+    if (followerCount.value != null) followerCount.value += target ? 1 : -1
+  } catch { /* 拦截器已 toast */ }
+  followBusy.value = false
 }
 
 /** 点赞/取消赞:乐观更新数字,失败回滚(错误提示由 api.js 拦截器统一弹出)。 */
@@ -863,10 +901,19 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.owner-card.clickable { cursor: pointer; transition: transform .3s var(--ease); }
-.owner-card.clickable:hover { transform: translateY(-2px); }
+.clickable { cursor: pointer; }
+.owner-card .clickable:hover .owner-name { color: var(--accent); }
 .owner-link { cursor: pointer; }
 .owner-link:hover { color: var(--accent); }
+.follow-pill {
+  margin-left: auto; flex-shrink: 0; border: none; cursor: pointer;
+  background: var(--accent); color: #fff; font-size: 13px; font-weight: 600;
+  padding: 7px 18px; border-radius: 980px;
+  transition: background .25s var(--ease), transform .25s var(--ease);
+}
+.follow-pill:hover { transform: scale(1.03); }
+.follow-pill.is-followed { background: #e8e8ed; color: var(--text-secondary); }
+.follow-pill:disabled { opacity: .6; cursor: default; }
 .owner-card {
   display: flex;
   align-items: center;
@@ -1167,10 +1214,19 @@ onBeforeUnmount(() => {
   .watch-side {
     width: 100%;
   }
-  .owner-card.clickable { cursor: pointer; transition: transform .3s var(--ease); }
-.owner-card.clickable:hover { transform: translateY(-2px); }
+  .clickable { cursor: pointer; }
+.owner-card .clickable:hover .owner-name { color: var(--accent); }
 .owner-link { cursor: pointer; }
 .owner-link:hover { color: var(--accent); }
+.follow-pill {
+  margin-left: auto; flex-shrink: 0; border: none; cursor: pointer;
+  background: var(--accent); color: #fff; font-size: 13px; font-weight: 600;
+  padding: 7px 18px; border-radius: 980px;
+  transition: background .25s var(--ease), transform .25s var(--ease);
+}
+.follow-pill:hover { transform: scale(1.03); }
+.follow-pill.is-followed { background: #e8e8ed; color: var(--text-secondary); }
+.follow-pill:disabled { opacity: .6; cursor: default; }
 .owner-card {
     margin-top: 16px;
   }

@@ -1,4 +1,4 @@
-package com.toys.video.moderation.handler;
+package com.toys.video.common.mybatis;
 
 import org.apache.ibatis.type.BaseTypeHandler;
 import org.apache.ibatis.type.JdbcType;

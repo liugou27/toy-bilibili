@@ -36,6 +36,7 @@ public class DanmakuService {
     private final SensitiveWordHolder sensitiveWordHolder;
 
     /** 发弹幕:视频必须存在,timeSec≥0,正文非空、≤100 字且不命中敏感词。 */
+    @com.toys.video.common.idempotent.Idempotent(scene = "danmaku", key = "#videoId + ':' + #timeSec + ':' + #content", windowSeconds = 5, message = "弹幕已发送")
     public DanmakuItem post(Long videoId, Long userId, Double timeSec, String content) {
         // 参数校验先行:无效输入不触发 DB 查询
         if (timeSec == null || timeSec < 0) {

@@ -10,6 +10,7 @@ import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.moderation.entity.ModerationReport;
 import com.toys.video.moderation.mapper.ModerationReportMapper;
+import com.toys.video.moderation.risk.RiskEvaluateClient;
 import com.toys.video.common.text.SensitiveWordFilter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ public class ModerationService {
     private final AutoScreenService autoScreenService;
     private final VideoInternalClient videoInternalClient;
     private final SensitiveWordService sensitiveWordService;
+    private final RiskEvaluateClient riskEvaluateClient;
 
     /** 事件触发:先文本机审(标题/简介),再画面机审并推进状态。状态回写失败(2105)视为重复/过期投递,幂等跳过。 */
     public void moderate(Long videoId, String objectKey, String title, String description) {
@@ -76,27 +78,19 @@ public class ModerationService {
                 return;
             }
         }
-        JsonNode meta = null;
-        String verdict;
-        String reportJson;
-        if (textFail) {
-            verdict = "AUTO_FAIL";
-            reportJson = textReportJson(rejectHits, reviewHits);
-        } else {
-            JsonNode result = autoScreenService.screen(objectKey);
-            verdict = result.path("verdict").asText("AUTO_FAIL");
-            meta = result.path("meta");
-            if (!reviewHits.isEmpty() && result instanceof ObjectNode obj) {
-                obj.set("reviewHits", OBJECT_MAPPER.valueToTree(reviewHits));
-            }
-            reportJson = result.toString();
-        }
+
+        // 风控评级:组装文本/画面机审结果调 risk-service 打分定级,verdict 由评级映射;
+        // 服务不可用时降级为本地旧规则(报告标记 riskDegraded)
+        RiskOutcome risk = assessRisk(rejectHits, reviewHits, screenResult);
+        String verdict = risk.verdict();
 
         ModerationReport report = new ModerationReport();
         report.setVideoId(videoId);
         report.setAutoVerdict(verdict);
-        report.setAutoReport(reportJson);
-        boolean autoReject = textFail || AUTO_FAIL_ACTIONS.contains(verdict);
+        report.setAutoReport(buildReportJson(textFail, rejectHits, reviewHits, screenResult, risk));
+        report.setRiskScore(risk.score());
+        report.setRiskLevel(risk.level());
+        boolean autoReject = AUTO_FAIL_ACTIONS.contains(verdict);
         // 硬失败自动拒绝:报告直接终态,不再进人工队列
         report.setDecision(autoReject ? "REJECTED" : "PENDING");
         String rejectReason = null;
@@ -114,6 +108,7 @@ public class ModerationService {
             return;
         }
 
+        JsonNode meta = textFail ? null : screenResult.path("meta");
         VideoInternalClient.InternalStatusUpdate update = new VideoInternalClient.InternalStatusUpdate(
                 autoReject ? VideoStatus.REJECTED.name() : VideoStatus.UNDER_REVIEW.name(),
                 textFail ? null : longOrNull(meta.path("duration_sec")),
@@ -122,17 +117,77 @@ public class ModerationService {
                 textFail ? rejectReason
                         : (autoReject ? "机审未通过:内容不合规或文件异常" : null));
         applyStatus(videoId, update);
-        log.info("video {} auto-screened: {} -> {}", videoId, verdict, update.target());
+        log.info("video {} auto-screened: {} -> {} (risk score={} level={} degraded={})",
+                videoId, verdict, update.target(), risk.score(), risk.level(), risk.degraded());
     }
 
-    /** 文本机审报告 JSON:REJECT 命中决定 verdict,REVIEW 命中记入 reviewHits 供人审参考。 */
-    private String textReportJson(List<String> rejectHits, List<String> reviewHits) {
-        ObjectNode node = OBJECT_MAPPER.createObjectNode();
-        node.put("verdict", "AUTO_FAIL");
-        node.put("source", "text");
-        node.set("hits", OBJECT_MAPPER.valueToTree(rejectHits));
+    // ==================== 风控评级(risk-service) ====================
+
+    /** 评级结论:score/level/items 仅在评级成功时非空,verdict 恒有值。 */
+    private record RiskOutcome(Integer score, String level,
+                               List<RiskEvaluateClient.RiskItem> items, boolean degraded, String verdict) {
+    }
+
+    /**
+     * 调 risk-service 打分,评级映射机审结论:REJECT→AUTO_FAIL、REVIEW→AUTO_SUSPECT、PASS→AUTO_PASS。
+     * 调用失败(兜底抛 SERVICE_UNAVAILABLE 等)降级:本地沿用旧规则——文本 REJECT→AUTO_FAIL,
+     * 否则直接采画面机审结论(AUTO_FAIL/AUTO_SUSPECT/AUTO_PASS)。
+     */
+    private RiskOutcome assessRisk(List<String> rejectHits, List<String> reviewHits, JsonNode screenResult) {
+        try {
+            var resp = riskEvaluateClient.evaluate(
+                    new RiskEvaluateClient.RiskRequest(rejectHits, reviewHits, screenResult));
+            if (resp != null && resp.isSuccess() && resp.data() != null) {
+                var result = resp.data();
+                return new RiskOutcome(result.score(), result.level(), result.riskItems(),
+                        false, mapVerdict(result.level()));
+            }
+            log.warn("risk-service evaluate unexpected response: {}", resp);
+            throw new BizException(ErrorCode.INTERNAL_ERROR, "风控评级响应异常");
+        } catch (Exception e) {
+            log.warn("risk-service evaluate failed, degrade to local rules: {}", e.getMessage());
+            String verdict = !rejectHits.isEmpty() || screenResult == null
+                    ? "AUTO_FAIL"
+                    : screenResult.path("verdict").asText("AUTO_FAIL");
+            return new RiskOutcome(null, null, List.of(), true, verdict);
+        }
+    }
+
+    /** 评级映射机审结论:未知评级按可疑处理,转人工复核兜底。 */
+    private static String mapVerdict(String level) {
+        return switch (level == null ? "" : level) {
+            case "REJECT" -> "AUTO_FAIL";
+            case "REVIEW" -> "AUTO_SUSPECT";
+            case "PASS" -> "AUTO_PASS";
+            default -> "AUTO_SUSPECT";
+        };
+    }
+
+    /** 机审报告 JSON:文本硬失败走文本报告,否则保留画面机审结果;叠加风控评级字段。 */
+    private String buildReportJson(boolean textFail, List<String> rejectHits, List<String> reviewHits,
+                                   JsonNode screenResult, RiskOutcome risk) {
+        ObjectNode node;
+        if (textFail) {
+            node = OBJECT_MAPPER.createObjectNode();
+            node.put("verdict", "AUTO_FAIL");
+            node.put("source", "text");
+            node.set("hits", OBJECT_MAPPER.valueToTree(rejectHits));
+        } else if (screenResult instanceof ObjectNode screenObj) {
+            node = screenObj;
+        } else {
+            // 画面机审输出非对象(理论不可达):包一层避免丢数据
+            node = OBJECT_MAPPER.createObjectNode();
+            node.set("screen", screenResult);
+        }
         if (!reviewHits.isEmpty()) {
             node.set("reviewHits", OBJECT_MAPPER.valueToTree(reviewHits));
+        }
+        if (risk.degraded()) {
+            node.put("riskDegraded", true);
+        } else {
+            node.put("riskScore", risk.score());
+            node.put("riskLevel", risk.level());
+            node.set("riskItems", OBJECT_MAPPER.valueToTree(risk.items()));
         }
         return node.toString();
     }

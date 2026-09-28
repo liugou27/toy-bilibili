@@ -42,6 +42,7 @@ public class CommentService {
     private final SensitiveWordHolder sensitiveWordHolder;
 
     /** 发评论:视频必须存在,正文非空、≤500 字且不命中敏感词。 */
+    @com.toys.video.common.idempotent.Idempotent(scene = "comment", key = "#videoId + ':' + #content", windowSeconds = 10, message = "评论已提交,请勿重复发送")
     public CommentItem post(Long videoId, Long userId, String content) {
         requireVideo(videoId);
         Comment comment = new Comment();

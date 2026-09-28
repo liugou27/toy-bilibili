@@ -1,4 +1,4 @@
-package com.toys.video.moderation.support;
+package com.toys.video.common.minio;
 
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;

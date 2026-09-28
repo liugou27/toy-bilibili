@@ -113,7 +113,7 @@ public class TranscodeService {
                     .set(TranscodeJob::getStatus, "SUCCESS")
                     .set(TranscodeJob::getError, null)
                     .set(TranscodeJob::getPayload, job.getPayload(),
-                            "typeHandler=com.toys.video.media.handler.JsonbTypeHandler")
+                            "typeHandler=com.toys.video.common.mybatis.JsonbTypeHandler")
                     .set(TranscodeJob::getFinishedAt, LocalDateTime.now()));
             log.info("video {} transcoded and PUBLISHED", videoId);
         } catch (Exception e) {

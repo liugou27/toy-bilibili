@@ -5,7 +5,6 @@ import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.common.exception.BizException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataAccessException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -57,21 +56,10 @@ public class GlobalExceptionHandler {
         return R.fail(ErrorCode.PARAM_INVALID.getCode(), "参数类型错误");
     }
 
-    @ExceptionHandler(DataAccessException.class)
-    public R<Void> handleDataAccess(DataAccessException e) {
-        log.error("data access error", e);
-        return R.fail(ErrorCode.INTERNAL_ERROR.getCode(), "数据访问异常");
-    }
-
     @ExceptionHandler(RejectedExecutionException.class)
     public R<Void> handleRejectedExecution(RejectedExecutionException e) {
         log.error("executor rejected", e);
         return R.fail(ErrorCode.INTERNAL_ERROR.getCode(), "服务繁忙,请稍后重试");
     }
 
-    @ExceptionHandler(Exception.class)
-    public R<Void> handleUnknown(Exception e) {
-        log.error("unexpected error", e);
-        return R.fail(ErrorCode.INTERNAL_ERROR.getCode(), ErrorCode.INTERNAL_ERROR.getMessage());
-    }
 }

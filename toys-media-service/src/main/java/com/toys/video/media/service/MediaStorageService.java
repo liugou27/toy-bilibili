@@ -1,7 +1,7 @@
 package com.toys.video.media.service;
 
 import com.toys.video.media.config.MinioConfig;
-import com.toys.video.media.support.MinioRetryExecutor;
+import com.toys.video.common.minio.MinioRetryExecutor;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;

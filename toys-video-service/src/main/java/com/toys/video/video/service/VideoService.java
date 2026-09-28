@@ -733,6 +733,7 @@ public class VideoService {
     }
 
     /** 全部分片上传完成后合并并提交审核。 */
+    @com.toys.video.common.idempotent.Idempotent(scene = "upload-complete", key = "#videoId", windowSeconds = 15, message = "合并请求处理中,请勿重复提交")
     public void completeUpload(Long videoId, String title, String description,
                                String category, String tags, Long ownerId) {
         Video video = requireOwnedUpload(videoId, ownerId);
@@ -983,7 +984,8 @@ public class VideoService {
                 v.getStatus(), v.getNote(), v.getCategory(), VideoMetaPolicy.parseTags(v.getTags()),
                 v.getOriginalFilename(), v.getSizeBytes(),
                 v.getCreatedAt(), v.getPublishedAt(),
-                liked, v.getLikeCount(), favorited, resumePosition);
+                liked, interactionService.effectiveLikeCount(v.getId(), v.getLikeCount()),
+                favorited, resumePosition);
     }
 
     private String posterOf(Video v) {

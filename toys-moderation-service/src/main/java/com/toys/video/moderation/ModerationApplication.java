@@ -8,7 +8,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @EnableScheduling
 @EnableDiscoveryClient
-@EnableFeignClients(basePackages = "com.toys.video.api.feign")
+@EnableFeignClients(basePackages = {"com.toys.video.api.feign", "com.toys.video.moderation.risk"})
 @SpringBootApplication(scanBasePackages = "com.toys.video")
 public class ModerationApplication {
 

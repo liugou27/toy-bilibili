@@ -115,6 +115,24 @@
           </el-descriptions-item>
           <el-descriptions-item label="黑帧占比">{{ blackRatio ?? '-' }}</el-descriptions-item>
         </el-descriptions>
+        <div v-if="riskScore != null" class="risk-panel">
+          <div class="risk-score-box">
+            <span class="risk-num" :class="riskClass">{{ riskScore }}</span>
+            <div class="risk-score-meta">
+              <span class="risk-score-label">风险分</span>
+              <el-tag size="small" :type="riskTagType">{{ riskLevel }}</el-tag>
+            </div>
+          </div>
+          <ul v-if="riskItems.length" class="risk-items">
+            <li v-for="(item, i) in riskItems" :key="i" class="risk-item">
+              <span class="risk-item-name">{{ item.name }}</span>
+              <span class="risk-item-detail">{{ item.detail }}</span>
+              <span class="risk-item-weight">+{{ item.weight }}</span>
+            </li>
+          </ul>
+        </div>
+        <el-alert v-else-if="report?.autoReport?.riskDegraded" type="info" :closable="false"
+                  title="风控服务不可用,本单为本地降级机审结论" style="margin-bottom: 12px" />
         <el-table :data="checks" size="small" style="margin-bottom: 16px">
           <el-table-column prop="name" label="检查项" width="180" />
           <el-table-column label="结果" width="90">
@@ -231,6 +249,17 @@ const report = computed(() => {
 })
 const blackRatio = computed(() => report.value?.autoReport?.black_ratio)
 const checks = computed(() => report.value?.autoReport?.checks || [])
+const riskScore = computed(() => report.value?.autoReport?.riskScore ?? null)
+const riskLevel = computed(() => report.value?.autoReport?.riskLevel || '')
+const riskItems = computed(() => report.value?.autoReport?.riskItems || [])
+/** 风险分配色:<30 绿 / 30-69 琥珀 / ≥70 红 */
+const riskClass = computed(() => {
+  const s = riskScore.value
+  if (s == null) return ''
+  return s >= 70 ? 'risk-high' : s >= 30 ? 'risk-mid' : 'risk-low'
+})
+const riskTagType = computed(() =>
+  ({ REJECT: 'danger', REVIEW: 'warning', PASS: 'success' }[riskLevel.value] || 'info'))
 
 const importCount = computed(() => parseImport().length)
 
@@ -509,6 +538,24 @@ onBeforeUnmount(() => {
 .review-player { display: block; width: 100%; max-height: 400px; background: #000; border-radius: 16px; }
 .review-title { margin: 16px 0 12px; font-size: 17px; }
 .actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+
+.risk-panel {
+  display: flex; align-items: flex-start; gap: 24px;
+  padding: 14px 18px; margin-bottom: 12px;
+  background: rgba(120, 120, 128, 0.06); border-radius: 12px;
+}
+.risk-score-box { display: flex; align-items: center; gap: 12px; flex: none; }
+.risk-num { font-size: 44px; font-weight: 700; line-height: 1; }
+.risk-num.risk-high { color: var(--danger); }
+.risk-num.risk-mid { color: var(--warning); }
+.risk-num.risk-low { color: var(--success); }
+.risk-score-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.risk-score-label { font-size: 12px; color: var(--text-tertiary); }
+.risk-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.risk-item { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+.risk-item-name { flex: none; font-weight: 500; }
+.risk-item-detail { flex: 1; color: var(--text-secondary); }
+.risk-item-weight { flex: none; font-weight: 600; color: var(--warning); }
 
 .sw-card { margin-top: 24px; }
 .sw-head-actions { display: flex; align-items: center; gap: 8px; }

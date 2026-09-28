@@ -1,0 +1,2 @@
+com.toys.video.common.idempotent.IdempotentAutoConfiguration
+com.toys.video.common.config.MybatisPlusConfig

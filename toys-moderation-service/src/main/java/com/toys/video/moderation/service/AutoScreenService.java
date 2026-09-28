@@ -5,7 +5,7 @@ import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.common.util.PythonScriptRunner;
 import com.toys.video.moderation.config.MinioConfig;
-import com.toys.video.moderation.support.MinioRetryExecutor;
+import com.toys.video.common.minio.MinioRetryExecutor;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import lombok.extern.slf4j.Slf4j;

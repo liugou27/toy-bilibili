@@ -19,6 +19,7 @@
         <module>toys-video-service</module>
         <module>toys-moderation-service</module>
         <module>toys-media-service</module>
+        <module>toys-risk-service</module>
     </modules>
 
     <properties>

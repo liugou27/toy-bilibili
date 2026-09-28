@@ -31,7 +31,12 @@ public class InteractionService {
 
     // ==================== 点赞 ====================
 
-    /** 点赞:重复点赞静默幂等;首次点赞成功后累加 like_count。 */
+    /** 点赞缓冲键前缀:计数走 Redis,批量落库防爆款视频打挂 DB。 */
+    static final String LIKE_BUFFER_PREFIX = "like:buffer:";
+
+    private final org.springframework.data.redis.core.StringRedisTemplate redis;
+
+    /** 点赞:关系表 INSERT(唯一约束幂等);计数只写 Redis 缓冲,由定时任务批量落库。 */
     public void like(Long videoId, Long userId) {
         requireVideo(videoId);
         VideoLike like = new VideoLike();
@@ -43,21 +48,73 @@ public class InteractionService {
             log.info("like duplicated, video={}, user={}", videoId, userId);
             return;
         }
-        videoMapper.update(null, new LambdaUpdateWrapper<Video>()
-                .eq(Video::getId, videoId)
-                .setSql("like_count = like_count + 1"));
+        bufferDelta(videoId, 1);
     }
 
-    /** 取消点赞:未点赞时无操作;计数条件递减,防负数。 */
+    /** 取消点赞:删除关系;计数负向缓冲,落库时钳 0 防负数。 */
     public void unlike(Long videoId, Long userId) {
         int deleted = likeMapper.delete(new LambdaQueryWrapper<VideoLike>()
                 .eq(VideoLike::getVideoId, videoId)
                 .eq(VideoLike::getUserId, userId));
         if (deleted > 0) {
+            bufferDelta(videoId, -1);
+        }
+    }
+
+    /** 详情读取:DB 计数 + 未落库缓冲叠加(最终一致,延迟 ≤ flush 周期)。 */
+    public long effectiveLikeCount(Long videoId, long dbCount) {
+        try {
+            String buf = redis.opsForValue().get(LIKE_BUFFER_PREFIX + videoId);
+            long delta = buf == null ? 0 : Long.parseLong(buf);
+            return Math.max(0, dbCount + delta);
+        } catch (Exception e) {
+            return Math.max(0, dbCount);
+        }
+    }
+
+    private void bufferDelta(Long videoId, int delta) {
+        try {
+            redis.opsForValue().increment(LIKE_BUFFER_PREFIX + videoId, delta);
+        } catch (Exception e) {
+            // Redis 故障时回退为直接落库一次,保底不丢计数
+            log.warn("like buffer failed, fallback direct update: {}", e.getMessage());
             videoMapper.update(null, new LambdaUpdateWrapper<Video>()
                     .eq(Video::getId, videoId)
-                    .gt(Video::getLikeCount, 0)
-                    .setSql("like_count = like_count - 1"));
+                    .setSql(delta > 0 ? "like_count = like_count + 1" : "like_count = GREATEST(like_count - 1, 0)"));
+        }
+    }
+
+    /** 缓冲批量落库:读取增量→DB 条件更新→按已落库量回扣缓冲(中途新增不清零)。 */
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 10_000, initialDelay = 20_000)
+    public void flushLikeBuffer() {
+        java.util.Set<String> keys;
+        try {
+            keys = redis.keys(LIKE_BUFFER_PREFIX + "*");
+        } catch (Exception e) {
+            return;
+        }
+        if (keys == null || keys.isEmpty()) {
+            return;
+        }
+        for (String key : keys) {
+            try {
+                String v = redis.opsForValue().get(key);
+                if (v == null) {
+                    continue;
+                }
+                long delta = Long.parseLong(v);
+                if (delta == 0) {
+                    continue;
+                }
+                long videoId = Long.parseLong(key.substring(LIKE_BUFFER_PREFIX.length()));
+                videoMapper.update(null, new LambdaUpdateWrapper<Video>()
+                        .eq(Video::getId, videoId)
+                        .setSql("like_count = GREATEST(like_count + " + delta + ", 0)"));
+                // 只回扣本次已处理的量;期间新增的增量留给下一轮
+                redis.opsForValue().increment(key, -delta);
+            } catch (Exception e) {
+                log.warn("flush like buffer failed for {}: {}", key, e.getMessage());
+            }
         }
     }
 

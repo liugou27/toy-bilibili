@@ -1,0 +1,32 @@
+server:
+  port: 8105
+  shutdown: graceful
+
+spring:
+  application:
+    name: toys-risk-service
+  config:
+    import:
+      - optional:nacos:common.yml
+      - optional:nacos:toys-risk-service.yml
+  cloud:
+    nacos:
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+    openfeign:
+      circuitbreaker:
+        enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  threads:
+    virtual:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{traceId:-}] %logger{36} - %msg%n"

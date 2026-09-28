@@ -1,0 +1,19 @@
+frontend/src/views/WatchView.vue
+  s_17a5063aa38dd4::t_e99566d7ee7944 106-108,110,112-115,208,216-248,904-905,908-916,1217-1218,1221-1229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "349219bf5ce202aff41ae643b7400e00359eab19",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liufeng <liufeng@dtstack.com>"
+    }
+  }
+}

@@ -31,9 +31,9 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class MediaProxyController {
 
-    /** 白名单:hls/{数字id}/ 下的四类合法产物文件名。 */
-    private static final Pattern ALLOWED = Pattern.compile(
-            "^(\\d+)/(master\\.m3u8|\\d+p\\.m3u8|\\d+p_\\d+\\.ts|poster\\.jpg)$");
+    /** 白名单:hls/{数字id}/ 下的合法产物文件名(含段级转码的段分片命名)。包可见供单测。 */
+    static final Pattern ALLOWED = Pattern.compile(
+            "^(\\d+)/(master\\.m3u8|\\d+p\\.m3u8|\\d+p_\\d+\\.ts|\\d+p_\\d+_\\d+\\.ts|poster\\.jpg)$");
 
     private final MinioClient minioClient;
 

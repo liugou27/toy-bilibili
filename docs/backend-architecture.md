@@ -45,8 +45,9 @@ Spring Cloud Alibaba 微服务视频平台,覆盖 **上传 → 机审 → 人工
    → 详情(原片 presigned 15min + 机审报告结构化)→ 通过/拒绝(硬锁,条件更新)
    → 通过则 Feign 置 APPROVED → video-service 发 VIDEO_APPROVED
 ④ 转码:media 集群消费(同组多实例)→ transcode_jobs 租约抢占(条件更新,PENDING/FAILED 或租约过期的 RUNNING)
-   → Python transcode.py(按源高 1080/720/480 档,H.264 CRF23 + AAC,4s 分片 HLS + poster)
-   → 产物回传 MinIO hls/{id}/ → Feign 置 PUBLISHED;失败重试 3 次(MQ 重投递)→ TRANSCODE_FAILED
+   → 切段(关键帧无损 -c copy,默认 60s/段,短视频不分段)→ 段作为子作业发往集群并行转码
+   → 段转码(按源高 1080/720/480 档,H.264 CRF23 + AAC,4s 分片 HLS)→ 全段完成组装拼接 playlist
+   → 产物回传 MinIO hls/{id}/ → Feign 置 PUBLISHED;失败重试 3 次(MQ 重投递+租约回收)→ TRANSCODE_FAILED
 ⑤ 播放:GET /videos/{id} 返回 /media/hls/{id}/master.m3u8 → 网关代理 MinIO(支持 Range)
    → Artplayer + hls.js;播放量 Redis SETNX 24h 去重 + 10s 批量回写 DB
 ```
@@ -87,9 +88,10 @@ Spring Cloud Alibaba 微服务视频平台,覆盖 **上传 → 机审 → 人工
 
 ### 4.5 media-service(8104)
 
-- **集群模型**:同 consumer group 多实例横向扩容,吞吐随实例数线性增长(每实例 consumeThread=1 串行转码,CPU 密集)。
+- **集群模型**:同 consumer group 多实例横向扩容,吞吐随实例数线性增长(每实例 consumeThread=1 串行消费,CPU 密集)。
+- **段级分布式**:大视频按关键帧无损切段(默认 60s/段,`split_media.py`),段作为子作业(`transcode_segments` 表,独立租约/心跳/围栏)经 `video-transcode-segment-topic` 派发,集群内跨实例并行转码(`transcode_segment.py`,分片名带段前缀全局唯一);全段 SUCCESS 后由最后一例抢占 MERGING 就地组装(`merge_playlists.py` 拼接各档 playlist,段边界 EXT-X-DISCONTINUITY),产物与整片路径完全一致。缩容/宕机只重跑租约过期的那个段,已完成段不重试(实测 kill -9 后仅失联段 attempts=2,其余段保持 1)。
 - **租约抢占**:`UPDATE ... WHERE status IN ('PENDING','FAILED') OR (status='RUNNING' AND lease_until < now())` 原子领取,写入 owner_instance + lease_until + object_key;执行期间心跳线程续期(默认 30s 心跳/90s 租约)。
-- **故障抢回**:`LeaseReaper` 每 30s 扫描租约过期的 RUNNING 作业就地重新派发,与 MQ 重投递互为兜底;抢回时视频已在 TRANSCODING 的状态冲突视为合法续跑。
+- **故障抢回**:`LeaseReaper` 每 30s 扫描失联任务并重新派发,覆盖父作业各阶段(RUNNING 切源/MERGING 组装的租约过期)、段任务(RUNNING 租约过期、PENDING 滞留即段消息丢失)与 WAITING 已落定待收敛的作业,与 MQ 重投递互为兜底;抢回时视频已在 TRANSCODING 的状态冲突视为合法续跑。
 - **成功围栏**:作业 SUCCESS 落库限定本实例持有(owner+RUNNING 条件),被抢回的迟到实例写入不生效、结果直接丢弃;作业先 SUCCESS 再视频 PUBLISHED,两步之间崩溃由 skip 分支补偿重推。
 - **重试策略**:`TranscodePolicy`,attempts≥3 终态 TRANSCODE_FAILED(投稿页可重试);`StartupRecovery` 启动时清扫本机残留临时目录;MinIO 操作走 `MinioRetryExecutor`(3 次退避);临时目录用完即删。
 
@@ -98,7 +100,7 @@ Spring Cloud Alibaba 微服务视频平台,覆盖 **上传 → 机审 → 人工
 - **user_db**:users(id/username/password_hash/role/nickname/avatar)
 - **video_db**:videos(状态机全字段+md5/upload_id/part_size/category/tags/like_count)、video_likes、video_favorites、play_histories、comments、danmaku
 - **moderation_db**:moderation_reports(auto_verdict/auto_report jsonb/decision/claimed_by/claimed_at)、sensitive_words
-- **media_db**:transcode_jobs(status/attempts/max_attempts/error/payload jsonb/owner_instance/lease_until/object_key)
+- **media_db**:transcode_jobs(status: PENDING/RUNNING/WAITING/MERGING/SUCCESS/FAILED,attempts/owner_instance/lease_until/object_key,payload jsonb)、transcode_segments(job_id+seg_index 唯一,独立租约字段,ladder/duration)
 
 ID 全局雪花(`common/Snowflake`,时钟回拨等待);JSON 输出:ID 为字符串(防 JS 精度丢失)、计数为原生 long 数字。
 

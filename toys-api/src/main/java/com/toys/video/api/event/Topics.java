@@ -9,4 +9,6 @@ public final class Topics {
     public static final String VIDEO_UPLOADED = "video-uploaded-topic";
     /** 人工审核通过后发布,payload: VideoApprovedEvent。 */
     public static final String VIDEO_APPROVED = "video-approved-topic";
+    /** 转码切段完成后的段子任务派发,payload: VideoSegmentEvent。 */
+    public static final String VIDEO_TRANSCODE_SEGMENT = "video-transcode-segment-topic";
 }

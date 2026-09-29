@@ -46,6 +46,9 @@ mybatis-plus:
 
 rocketmq:
   name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}   # 【部署】RocketMQ NameServer(转码集群同组消费)
+  producer:
+    group: toys-media-producer
+    send-message-timeout: 10000
 
 toys:
   minio:
@@ -60,6 +63,7 @@ toys:
     lease-seconds: 90        # 作业租约时长,超时未续期即视为实例失联,可被抢回
     heartbeat-seconds: 30    # 转码执行期间的心跳续期间隔
     reap-interval-ms: 30000  # 租约回收扫描周期(LeaseReaper)
+    segment-seconds: 60      # 大视频切段目标时长(切点在关键帧,实际 >= 该值);短视频不分段
 
 management:
   endpoints:

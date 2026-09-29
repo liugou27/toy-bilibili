@@ -4,14 +4,16 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.toys.video.api.feign.VideoInternalClient;
 import com.toys.video.common.exception.BizException;
 import com.toys.video.common.exception.ErrorCode;
 import com.toys.video.common.util.PythonScriptRunner;
 import com.toys.video.media.config.InstanceId;
 import com.toys.video.media.entity.TranscodeJob;
+import com.toys.video.media.entity.TranscodeSegment;
 import com.toys.video.media.mapper.TranscodeJobMapper;
-import jakarta.annotation.PostConstruct;
+import com.toys.video.media.mapper.TranscodeSegmentMapper;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +23,8 @@ import org.springframework.stereotype.Service;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -28,10 +32,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 /**
- * 转码作业(集群模型):同一 consumer group 的多个实例共同消费,作业领取靠
- * 租约抢占(PENDING/FAILED,或 RUNNING 且租约过期的失联作业),执行期间心跳续期,
- * 成功回写以"本实例持有"为围栏,迟到实例的写入不会生效。
- * 失败重试最多 3 次(MQ 重投递/租约回收驱动),超限终态并回写 TRANSCODE_FAILED。
+ * 转码编排(集群模型):VIDEO_APPROVED 触发本入口,内部完成
+ * 切源建段(段作为子作业发往集群)→ 段并行转码(SegmentService)→ 组装发布(TranscodeAssembler)。
+ * 作业领取靠租约抢占(PENDING/FAILED,或 RUNNING 且租约过期),执行期间心跳续期;
+ * 任何实例可凭 DB 状态重入任意阶段:段未建→切源,段未齐→重派,段全成→组装。
  */
 @Slf4j
 @Service
@@ -39,11 +43,14 @@ import java.util.stream.Stream;
 public class TranscodeService {
 
     private final TranscodeJobMapper jobMapper;
+    private final TranscodeSegmentMapper segmentMapper;
     private final MediaStorageService storageService;
     private final PythonScriptRunner scriptRunner;
     private final VideoInternalClient videoInternalClient;
     private final TranscodePolicy transcodePolicy;
     private final InstanceId instanceId;
+    private final SegmentService segmentService;
+    private final TranscodeAssembler assembler;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${toys.scripts.dir}")
@@ -54,6 +61,9 @@ public class TranscodeService {
 
     @Value("${toys.transcode.heartbeat-seconds:30}")
     private int heartbeatSeconds;
+
+    @Value("${toys.transcode.segment-seconds:60}")
+    private int segmentSeconds;
 
     /** 单线程足够:每实例串行转码(consumeThreadNumber=1)。 */
     private final ScheduledExecutorService heartbeatExecutor =
@@ -109,60 +119,36 @@ public class TranscodeService {
         job.setAttempts(job.getAttempts() + 1);
         log.info("job for video {} claimed by {} (attempt {}/{})",
                 videoId, instanceId.value(), job.getAttempts(), job.getMaxAttempts());
-        JsonNode result = null;
         ScheduledFuture<?> heartbeat = startHeartbeat(job.getId());
 
         try {
-            // 1. 置 TRANSCODING;视频已在 TRANSCODING(租约抢回续跑)放行,其余冲突跳过
-            var resp = videoInternalClient.updateStatus(videoId,
-                    new VideoInternalClient.InternalStatusUpdate("TRANSCODING", null, null, null, null));
-            if (resp != null && resp.code() == ErrorCode.VIDEO_STATUS_CONFLICT.getCode()
-                    && !"TRANSCODING".equals(currentVideoStatus(videoId))) {
-                log.warn("video {} not in APPROVED, skip transcode", videoId);
-                releaseJob(job.getId(), "video status conflict");
+            List<TranscodeSegment> segments = segmentMapper.selectList(
+                    new LambdaQueryWrapper<TranscodeSegment>()
+                            .eq(TranscodeSegment::getJobId, job.getId())
+                            .orderByAsc(TranscodeSegment::getSegIndex));
+
+            if (segments.isEmpty()) {
+                splitAndEnqueue(job, objectKey);
                 return;
             }
-
-            // 2. 拉原片 → 转码 → 回传产物
-            Path workDir = Files.createTempDirectory("transcode-");
-            try {
-                Path original = workDir.resolve("original.bin");
-                storageService.downloadOriginal(objectKey, original);
-                result = scriptRunner.run(Path.of(scriptsDir, "transcode.py"),
-                        original.toString(), workDir.resolve("out").toString());
-                storageService.uploadHls(videoId, workDir.resolve("out"));
-                job.setPayload(result.toString());
-            } finally {
-                cleanup(workDir);
+            if (segments.stream().allMatch(s -> "SUCCESS".equals(s.getStatus()))) {
+                takeOverAndAssemble(job, segments);
+                return;
             }
-
-            // 3. 作业先落 SUCCESS(限本实例持有的 RUNNING)——围栏拦截被抢回后的迟到写入;
-            //    随后视频置 PUBLISHED,两步之间崩溃由 skip 分支补偿(见 repairStuckPublish)
-            int done = jobMapper.update(null, new LambdaUpdateWrapper<TranscodeJob>()
+            // 重入(切源实例失联/部分段未派发):重置 TRANSCODING 并重派未完成段
+            markTranscoding(videoId);
+            segmentService.redispatchIncomplete(segments);
+            jobMapper.update(null, new LambdaUpdateWrapper<TranscodeJob>()
                     .eq(TranscodeJob::getId, job.getId())
                     .eq(TranscodeJob::getStatus, "RUNNING")
                     .eq(TranscodeJob::getOwnerInstance, instanceId.value())
-                    .set(TranscodeJob::getStatus, "SUCCESS")
-                    .set(TranscodeJob::getError, null)
-                    .set(TranscodeJob::getPayload, job.getPayload(),
-                            "typeHandler=com.toys.video.common.mybatis.JsonbTypeHandler")
-                    .set(TranscodeJob::getFinishedAt, LocalDateTime.now())
+                    .set(TranscodeJob::getStatus, "WAITING")
                     .set(TranscodeJob::getLeaseUntil, null));
-            if (done == 0) {
-                log.warn("job for video {} superseded by another instance, drop result", videoId);
-                return;
-            }
-            var ok = videoInternalClient.updateStatus(videoId,
-                    new VideoInternalClient.InternalStatusUpdate("PUBLISHED",
-                            longOrNull(result.path("duration_sec")), null, null, null));
-            // 已被补偿路径置 PUBLISHED 的同态冲突视为成功
-            if (ok != null && ok.code() != 0 && ok.code() != ErrorCode.VIDEO_STATUS_CONFLICT.getCode()) {
-                throw new BizException(ErrorCode.INTERNAL_ERROR, "PUBLISHED 回写失败: " + ok.message());
-            }
-            log.info("video {} transcoded and PUBLISHED by {}", videoId, instanceId.value());
+            log.info("job for video {} re-dispatched {} incomplete segment(s), WAITING",
+                    videoId, segments.stream().filter(s -> !"SUCCESS".equals(s.getStatus())).count());
         } catch (Exception e) {
             String error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-            log.error("transcode failed for video {}: {}, {}",
+            log.error("orchestrate failed for video {}: {}, {}",
                     videoId, error, transcodePolicy.retryHint(job.getAttempts(), job.getMaxAttempts()));
             if (!transcodePolicy.shouldRetry(job.getAttempts(), job.getMaxAttempts())) {
                 finalizeFailure(videoId, job, error);
@@ -173,7 +159,6 @@ public class TranscodeService {
                         .set(TranscodeJob::getStatus, "FAILED")
                         .set(TranscodeJob::getError, error)
                         .set(TranscodeJob::getLeaseUntil, null));
-                // 抛出让 MQ 延迟重试
                 if (e instanceof BizException be) {
                     throw be;
                 }
@@ -182,6 +167,101 @@ public class TranscodeService {
         } finally {
             heartbeat.cancel(false);
         }
+    }
+
+    /**
+     * 切源:下载原片→关键帧无损切段→上传段源与封面→建段子作业→发段消息→作业转 WAITING。
+     */
+    private void splitAndEnqueue(TranscodeJob job, String objectKey) throws Exception {
+        Long videoId = job.getVideoId();
+        if (!markTranscoding(videoId)) {
+            log.warn("video {} not in APPROVED/TRANSCODING, skip transcode", videoId);
+            releaseJob(job.getId(), "video status conflict");
+            return;
+        }
+        Path workDir = Files.createTempDirectory("split-");
+        try {
+            Path original = workDir.resolve("original.bin");
+            storageService.downloadOriginal(objectKey, original);
+            JsonNode result = scriptRunner.run(Path.of(scriptsDir, "split_media.py"),
+                    original.toString(), workDir.resolve("segments").toString(),
+                    String.valueOf(segmentSeconds));
+
+            boolean single = result.path("single").asBoolean(false);
+            String ladder = joinLadder(result.path("ladder"));
+            storageService.uploadFile(com.toys.video.media.config.MinioConfig.BUCKET_HLS,
+                    videoId + "/poster.jpg", workDir.resolve("segments").resolve(result.path("poster").asText()),
+                    "image/jpeg");
+
+            List<TranscodeSegment> created = new ArrayList<>();
+            for (JsonNode seg : result.path("segments")) {
+                int index = seg.path("index").asInt();
+                TranscodeSegment row = new TranscodeSegment();
+                row.setJobId(job.getId());
+                row.setVideoId(videoId);
+                row.setSegIndex(index);
+                row.setDurationSec(seg.path("duration_sec").asDouble());
+                row.setLadder(ladder);
+                row.setStatus("PENDING");
+                row.setAttempts(0);
+                row.setMaxAttempts(3);
+                if (single) {
+                    row.setObjectKey(objectKey);
+                } else {
+                    String segKey = "segments/" + videoId + "/" + String.format("%04d", index) + ".mp4";
+                    storageService.uploadFile(com.toys.video.media.config.MinioConfig.BUCKET_VIDEOS,
+                            segKey, workDir.resolve("segments").resolve(seg.path("file").asText()),
+                            "video/mp4");
+                    row.setObjectKey(segKey);
+                }
+                segmentMapper.insert(row);
+                created.add(row);
+            }
+            ObjectNode payload = objectMapper.createObjectNode();
+            payload.put("duration_sec", result.path("duration_sec").asDouble());
+            payload.put("ladder", ladder);
+            payload.put("segments", created.size());
+            job.setPayload(payload.toString());
+
+            segmentService.dispatch(created);
+            jobMapper.update(null, new LambdaUpdateWrapper<TranscodeJob>()
+                    .eq(TranscodeJob::getId, job.getId())
+                    .eq(TranscodeJob::getStatus, "RUNNING")
+                    .eq(TranscodeJob::getOwnerInstance, instanceId.value())
+                    .set(TranscodeJob::getStatus, "WAITING")
+                    .set(TranscodeJob::getLeaseUntil, null)
+                    .set(TranscodeJob::getPayload, job.getPayload(),
+                            "typeHandler=com.toys.video.common.mybatis.JsonbTypeHandler"));
+            log.info("video {} split into {} segment(s), ladder [{}], target {}s each, dispatched to cluster",
+                    videoId, created.size(), ladder, segmentSeconds);
+        } finally {
+            cleanup(workDir);
+        }
+    }
+
+    /** 段全部完成:抢占 WAITING/RUNNING→MERGING,赢家就地组装。 */
+    private void takeOverAndAssemble(TranscodeJob job, List<TranscodeSegment> segments) {
+        int took = jobMapper.update(null, new LambdaUpdateWrapper<TranscodeJob>()
+                .eq(TranscodeJob::getId, job.getId())
+                .in(TranscodeJob::getStatus, "WAITING", "RUNNING")
+                .eq(TranscodeJob::getOwnerInstance, instanceId.value())
+                .set(TranscodeJob::getStatus, "MERGING")
+                .set(TranscodeJob::getLeaseUntil, LocalDateTime.now().plusSeconds(leaseSeconds * 3L)));
+        if (took == 0) {
+            log.info("job for video {} merging taken by another instance, skip", job.getVideoId());
+            return;
+        }
+        assembler.assemble(job, segments);
+    }
+
+    /** 置 TRANSCODING;已在 TRANSCODING(重入续跑)放行。 */
+    private boolean markTranscoding(Long videoId) {
+        var resp = videoInternalClient.updateStatus(videoId,
+                new VideoInternalClient.InternalStatusUpdate("TRANSCODING", null, null, null, null));
+        if (resp != null && resp.code() == ErrorCode.VIDEO_STATUS_CONFLICT.getCode()) {
+            return "TRANSCODING".equals(currentVideoStatus(videoId));
+        }
+        return true;
     }
 
     /** 作业 SUCCESS 但视频仍停 TRANSCODING(成功落库与回写之间崩溃)时补推 PUBLISHED。 */
@@ -214,7 +294,7 @@ public class TranscodeService {
         return null;
     }
 
-    /** 心跳续期:作业仍由本实例持有时刷新租约;丢失(被抢回)只告警,最终围栏兜底。 */
+    /** 心跳续期:作业仍由本实例持有时刷新租约;丢失(被抢回)只告警,围栏兜底。 */
     private ScheduledFuture<?> startHeartbeat(Long jobId) {
         return heartbeatExecutor.scheduleAtFixedRate(() -> {
             try {
@@ -232,7 +312,7 @@ public class TranscodeService {
         }, heartbeatSeconds, heartbeatSeconds, TimeUnit.SECONDS);
     }
 
-    private void releaseJob(Long jobId, String error) {
+    void releaseJob(Long jobId, String error) {
         jobMapper.update(null, new LambdaUpdateWrapper<TranscodeJob>()
                 .eq(TranscodeJob::getId, jobId)
                 .set(TranscodeJob::getStatus, "FAILED")
@@ -240,7 +320,7 @@ public class TranscodeService {
                 .set(TranscodeJob::getLeaseUntil, null));
     }
 
-    private void finalizeFailure(Long videoId, TranscodeJob job, String error) {
+    void finalizeFailure(Long videoId, TranscodeJob job, String error) {
         jobMapper.update(null, new LambdaUpdateWrapper<TranscodeJob>()
                 .eq(TranscodeJob::getId, job.getId())
                 .set(TranscodeJob::getStatus, "FAILED")
@@ -264,14 +344,20 @@ public class TranscodeService {
         }
     }
 
-    private Long longOrNull(JsonNode n) {
-        return n.isMissingNode() || n.isNull() ? null : n.asLong();
+    private String joinLadder(JsonNode ladder) {
+        List<String> heights = new ArrayList<>();
+        ladder.forEach(h -> heights.add(h.asText()));
+        return String.join(",", heights);
     }
 
-    @PostConstruct
+    private Long longOrNull(JsonNode n) {
+        return n.isMissingNode() || n.isNull() ? null : (long) n.asDouble();
+    }
+
+    @jakarta.annotation.PostConstruct
     void logLeaseConfig() {
-        log.info("transcode cluster: instance={}, lease={}s, heartbeat={}s (Nacos 优先于本地默认值)",
-                instanceId.value(), leaseSeconds, heartbeatSeconds);
+        log.info("transcode cluster: instance={}, lease={}s, heartbeat={}s, segment={}s (Nacos 优先于本地默认值)",
+                instanceId.value(), leaseSeconds, heartbeatSeconds, segmentSeconds);
     }
 
     @PreDestroy

@@ -1,0 +1,40 @@
+toys-media-service/src/main/java/com/toys/video/media/entity/TranscodeJob.java
+  s_17a5063aa38dd4::t_558c92dce469c3 30-38
+toys-media-service/src/main/java/com/toys/video/media/service/TranscodeService.java
+  s_17a5063aa38dd4::t_7ab20e678e0aa4 6,11,14,17,23-26,30-33,45-46,48,51-64,77,89-91,93-97,100-105,109-110,112,115,118-119,121,138-140,143,148-161,173-174,181-182,186-241,247-248,269-273
+toys-media-service/src/test/java/com/toys/video/media/service/LeaseReaperTest.java
+  s_17a5063aa38dd4::t_1f55fcf91a907e 73-74
+  s_17a5063aa38dd4::t_6ebec010414dc2 1-72,75-99
+toys-media-service/src/test/java/com/toys/video/media/service/TranscodeServiceTest.java
+  s_17a5063aa38dd4::t_e44ee6dd317d7f 1-190
+toys-media-service/src/main/resources/db/migration/V2__transcode_lease.sql
+  s_17a5063aa38dd4::t_411fa54dc4e082 1-6
+docs/backend-architecture.md
+  s_17a5063aa38dd4::t_d089b938d6b17e 30,47,90-94,101
+toys-media-service/src/main/java/com/toys/video/media/service/LeaseReaper.java
+  s_17a5063aa38dd4::t_63e7b08168ce9c 1-61
+toys-media-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_fd756c3b2876ef 52-55
+toys-media-service/src/main/java/com/toys/video/media/service/StartupRecovery.java
+  s_17a5063aa38dd4::t_ef07feed789b60 8
+toys-media-service/src/main/java/com/toys/video/media/config/InstanceId.java
+  s_17a5063aa38dd4::t_8550d1a2254c5c 1-30
+toys-media-service/src/main/java/com/toys/video/media/MediaApplication.java
+  s_17a5063aa38dd4::t_cf7070075839d2 7,11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7385a97cf0501e939b2fa2c9462b2839a3fe3114",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liugou27 <liugou27@qq.com>"
+    }
+  }
+}

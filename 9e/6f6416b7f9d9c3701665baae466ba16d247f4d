@@ -1,0 +1,19 @@
+.gitignore
+  s_17a5063aa38dd4::t_0a0d5e86bb1b78 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9e6f6416b7f9d9c3701665baae466ba16d247f4d",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liugou27 <liugou27@qq.com>"
+    }
+  }
+}

@@ -116,6 +116,7 @@ ID 全局雪花(`common/Snowflake`,时钟回拨等待);JSON 输出:ID 为字符�
 - **双模式 compose**(`deploy/docker-compose.yml`):默认仅中间件(Nacos/RocketMQ/Redis,本地开发);`--profile full` 增起 postgres 容器 + 5 服务镜像(`deploy/docker/Dockerfile.service`,temurin 21 + HEALTHCHECK,moderation/media 附 python3/ffmpeg)+ 前端 Nginx 镜像(`Dockerfile.frontend`,8081 端口)。全部配置环境变量参数化(默认值=本地开发值)。
 - **服务器单源拓扑**(`deploy/nginx.conf.example`):Nginx 80 统一入口(静态 + /api + /media 反代网关),浏览器零跨域;MinIO 不暴露公网。
 - 已知适配:MinIO 官方停发 arm64 镜像/brew → GitHub amd64 二进制 + Rosetta(`start-minio.sh`);双 broker.conf(本地 127.0.0.1 / 容器 rocketmq-broker)。
+- **配置管理(Nacos 配置中心)**:`deploy/nacos-init.sh` 把 `deploy/nacos-configs/`(共享 `common.yml` + 每服务 DataId)推入 Nacos;服务以 `spring.config.import: optional:nacos:` 引用,优先级 **Nacos > 环境变量 > 本地 application.yml 默认值**——Nacos 缺席时本地默认值即可独立跑通(本地开发零配置)。各服务 application.yml 以【部署】标注环境敏感项;转码集群租约参数在 Nacos `toys-media-service.yml` 调整(租约需 > 2× 心跳间隔)。
 
 ## 8. 质量保障
 

@@ -1,3 +1,9 @@
+# ---------------------------------------------------------------------------
+# 配置优先级: Nacos(common.yml / toys-risk-service.yml, 由 deploy/nacos-init.sh 初始化)
+#   > 环境变量 > 本文件默认值。本地开发不配 Nacos 也能用本文件默认值跑通;
+#   部署新环境: 先执行 deploy/nacos-init.sh, 再到 Nacos 控制台改标了【部署】的项。
+# ---------------------------------------------------------------------------
+
 server:
   port: 8105
   shutdown: graceful
@@ -11,7 +17,7 @@ spring:
       - optional:nacos:toys-risk-service.yml
   cloud:
     nacos:
-      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}   # 【部署】Nacos 注册/配置中心地址
     openfeign:
       circuitbreaker:
         enabled: true

@@ -1,0 +1,20 @@
+# 所有服务共享配置(DataId: common.yml,group: DEFAULT_GROUP)
+# 由 deploy/nacos-init.sh 推送到 Nacos;服务侧 spring.config.import 引用,
+# Nacos 中存在时优先于服务本地 application.yml 生效。
+# 部署新环境时改这里(或对应环境变量),不用逐个改 6 个服务的配置文件。
+
+rocketmq:
+  name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}
+
+toys:
+  # MinIO 对象存储(原片/HLS/封面)
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+    access-key: ${MINIO_AK:minioadmin}
+    secret-key: ${MINIO_SK:minioadmin}
+  # Python 媒体脚本目录(相对路径以服务进程工作目录为基准)
+  scripts:
+    dir: ${TOYS_SCRIPTS_DIR:./scripts}
+  # JWT 密钥:网关验签与 user-service 签发必须一致;生产必须换强随机值
+  jwt:
+    secret: ${JWT_SECRET:toys-video-dev-secret-key-change-me-in-prod!}

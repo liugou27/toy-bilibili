@@ -1,0 +1,12 @@
+# media-service 专属配置(DataId: toys-media-service.yml)
+# 转码集群租约参数:租约需大于心跳间隔的 2 倍以上,避免偶发超时误判失联。
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=media_db
+
+toys:
+  transcode:
+    lease-seconds: 45       # 作业租约时长:超过未续期即视为实例失联,可被其他实例抢回
+    heartbeat-seconds: 15   # 转码执行期间的心跳续期间隔
+    reap-interval-ms: 30000 # 租约回收扫描周期(LeaseReaper)

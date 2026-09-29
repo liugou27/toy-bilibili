@@ -1,3 +1,9 @@
+# ---------------------------------------------------------------------------
+# 配置优先级: Nacos(common.yml / toys-video-service.yml, 由 deploy/nacos-init.sh 初始化)
+#   > 环境变量 > 本文件默认值。本地开发不配 Nacos 也能用本文件默认值跑通;
+#   部署新环境: 先执行 deploy/nacos-init.sh, 再到 Nacos 控制台改标了【部署】的项。
+# ---------------------------------------------------------------------------
+
 server:
   port: 8102
   shutdown: graceful
@@ -13,14 +19,14 @@ spring:
     timeout-per-shutdown-phase: 30s
   cloud:
     nacos:
-      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}   # 【部署】Nacos 注册/配置中心地址
     openfeign:
       circuitbreaker:
         enabled: true
   datasource:
-    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=video_db
-    username: postgres
-    password: ""
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=video_db  # 【部署】库地址/schema
+    username: postgres   # 【部署】数据库账号
+    password: ""         # 【部署】数据库密码
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -39,7 +45,7 @@ spring:
       max-request-size: 2200MB
   data:
     redis:
-      host: ${REDIS_HOST:127.0.0.1}
+      host: ${REDIS_HOST:127.0.0.1}   # 【部署】Redis(播放量去重/点赞缓冲)
       port: 6379
 
 mybatis-plus:
@@ -47,14 +53,14 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 rocketmq:
-  name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}
+  name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}   # 【部署】RocketMQ NameServer
   producer:
     group: toys-video-producer
     send-message-timeout: 10000
 
 toys:
   minio:
-    endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+    endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}   # 【部署】MinIO 地址(桶保持私有,经网关代理播放)
     access-key: ${MINIO_AK:minioadmin}
     secret-key: ${MINIO_SK:minioadmin}
   upload:

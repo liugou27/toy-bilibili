@@ -1,3 +1,9 @@
+# ---------------------------------------------------------------------------
+# 配置优先级: Nacos(common.yml / toys-media-service.yml, 由 deploy/nacos-init.sh 初始化)
+#   > 环境变量 > 本文件默认值。本地开发不配 Nacos 也能用本文件默认值跑通;
+#   部署新环境: 先执行 deploy/nacos-init.sh, 再到 Nacos 控制台改标了【部署】的项。
+# ---------------------------------------------------------------------------
+
 server:
   port: 8104
   shutdown: graceful
@@ -11,14 +17,14 @@ spring:
       - optional:nacos:toys-media-service.yml
   cloud:
     nacos:
-      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}   # 【部署】Nacos 注册/配置中心地址
     openfeign:
       circuitbreaker:
         enabled: true
   datasource:
-    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=media_db
-    username: postgres
-    password: ""
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=media_db  # 【部署】库地址/schema
+    username: postgres   # 【部署】数据库账号
+    password: ""         # 【部署】数据库密码
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -39,7 +45,7 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 rocketmq:
-  name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}
+  name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}   # 【部署】RocketMQ NameServer(转码集群同组消费)
 
 toys:
   minio:
@@ -47,12 +53,13 @@ toys:
     access-key: ${MINIO_AK:minioadmin}
     secret-key: ${MINIO_SK:minioadmin}
   scripts:
-    dir: ${TOYS_SCRIPTS_DIR:/Users/dsy/Desktop/dev/works/toys/scripts}
+    dir: ${TOYS_SCRIPTS_DIR:./scripts}   # 【部署】媒体脚本目录,相对路径基于进程工作目录(默认仓库根)
     python-bin: python3
   transcode:
-    lease-seconds: 90
-    heartbeat-seconds: 30
-    reap-interval-ms: 30000
+    # 转码集群租约参数:多实例部署按机器性能调整;租约应大于 2 倍心跳间隔
+    lease-seconds: 90        # 作业租约时长,超时未续期即视为实例失联,可被抢回
+    heartbeat-seconds: 30    # 转码执行期间的心跳续期间隔
+    reap-interval-ms: 30000  # 租约回收扫描周期(LeaseReaper)
 
 management:
   endpoints:

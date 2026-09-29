@@ -11,6 +11,7 @@ import com.toys.video.common.util.PythonScriptRunner;
 import com.toys.video.media.config.InstanceId;
 import com.toys.video.media.entity.TranscodeJob;
 import com.toys.video.media.mapper.TranscodeJobMapper;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -265,6 +266,12 @@ public class TranscodeService {
 
     private Long longOrNull(JsonNode n) {
         return n.isMissingNode() || n.isNull() ? null : n.asLong();
+    }
+
+    @PostConstruct
+    void logLeaseConfig() {
+        log.info("transcode cluster: instance={}, lease={}s, heartbeat={}s (Nacos 优先于本地默认值)",
+                instanceId.value(), leaseSeconds, heartbeatSeconds);
     }
 
     @PreDestroy

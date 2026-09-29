@@ -1,3 +1,9 @@
+# ---------------------------------------------------------------------------
+# 配置优先级: Nacos(common.yml / toys-user-service.yml, 由 deploy/nacos-init.sh 初始化)
+#   > 环境变量 > 本文件默认值。本地开发不配 Nacos 也能用本文件默认值跑通;
+#   部署新环境: 先执行 deploy/nacos-init.sh, 再到 Nacos 控制台改标了【部署】的项。
+# ---------------------------------------------------------------------------
+
 server:
   port: 8101
   shutdown: graceful
@@ -17,11 +23,11 @@ spring:
       port: 6379
   cloud:
     nacos:
-      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}   # 【部署】Nacos 注册/配置中心地址
   datasource:
-    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=user_db
-    username: postgres
-    password: ""
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=user_db  # 【部署】库地址/schema
+    username: postgres   # 【部署】数据库账号
+    password: ""         # 【部署】数据库密码(生产禁用 trust 免密)
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5

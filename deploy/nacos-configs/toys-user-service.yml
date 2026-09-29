@@ -1,0 +1,11 @@
+# user-service 专属配置(DataId: toys-user-service.yml)
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=user_db
+
+toys:
+  jwt:
+    ttl-seconds: 604800   # 登录态有效期(7 天)
+  user:
+    bloom-capacity: 100000  # 用户名布隆过滤器容量(存量超 1/2 时自动倍扩重建)

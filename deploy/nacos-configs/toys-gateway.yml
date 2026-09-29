@@ -1,0 +1,5 @@
+# gateway 专属配置(DataId: toys-gateway.yml)
+
+toys:
+  cors:
+    origins: http://localhost:5173  # 前端来源,生产改为实际域名(逗号分隔多个)

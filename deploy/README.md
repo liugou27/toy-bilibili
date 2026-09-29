@@ -26,6 +26,10 @@ cd deploy && docker compose up -d nacos rocketmq-namesrv rocketmq-broker redis &
 # 注意:compose 中 broker 挂载默认指向 broker-docker.conf(容器模式),
 # 宿主机直跑服务需把挂载换回 ./rocketmq/broker.conf(brokerIP1=127.0.0.1),否则服务连不上 broker
 
+# 1b. 配置中心(可选,推荐):把 deploy/nacos-configs/(公共 MQ/MinIO/JWT + 各服务专属)推入 Nacos
+./deploy/nacos-init.sh          # 不推送也能跑:服务回退到本地 application.yml 默认值;
+                                # 推送后以 Nacos 为准,改环境只动 Nacos 控制台,不动代码库
+
 # 2. MinIO(官方已无 darwin-arm64 构建,用 Rosetta 转译 amd64 二进制)
 deploy/start-minio.sh &          # 数据目录 ~/toys-minio-data,账号 minioadmin/minioadmin
 

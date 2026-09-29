@@ -1,0 +1,5 @@
+# moderation-service 专属配置(DataId: toys-moderation-service.yml)
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5433}/toys_video?currentSchema=moderation_db

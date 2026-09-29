@@ -1,0 +1,75 @@
+toys-media-service/src/test/java/com/toys/video/media/service/SegmentServiceTest.java
+  s_17a5063aa38dd4::t_7e55ee6789400e 86
+  s_17a5063aa38dd4::t_81c7b3bd41c4da 1-31,33-85,87-96,98-111,113-122,124-151,153-173
+  s_17a5063aa38dd4::t_833542f34bd6d8 32
+  s_17a5063aa38dd4::t_38384827dc124e 123
+  s_17a5063aa38dd4::t_b363e41ae545fe 97
+  s_17a5063aa38dd4::t_c3d8f45f76a3a1 112
+  s_17a5063aa38dd4::t_d9bf30f71157cc 152
+toys-media-service/src/main/java/com/toys/video/media/service/MediaStorageService.java
+  s_17a5063aa38dd4::t_eea18e84c2089c 63-72
+  s_17a5063aa38dd4::t_2bd519430a0c41 29-32,35,43-62,73-90
+  s_17a5063aa38dd4::t_8596d774680887 28
+toys-media-service/src/main/java/com/toys/video/media/mq/SegmentConsumer.java
+  s_17a5063aa38dd4::t_96405e262479c3 1-58
+toys-api/src/main/java/com/toys/video/api/event/VideoSegmentEvent.java
+  s_17a5063aa38dd4::t_d7b82d0904498a 1-9
+toys-media-service/src/main/java/com/toys/video/media/entity/TranscodeSegment.java
+  s_17a5063aa38dd4::t_7717cdfcc1df31 1-46
+docs/backend-architecture.md
+  s_17a5063aa38dd4::t_b696d8374c1465 48-50,91-92,94,103
+toys-media-service/src/test/java/com/toys/video/media/service/TranscodeServiceTest.java
+  s_17a5063aa38dd4::t_79e5b89ee6fc23 204-205,207
+  s_17a5063aa38dd4::t_46da71f4bb9a40 13,15,32,34-35,43,50-51,57-60,69,74-76,80,85-87,93,97-98,100,102,104,110-114,116-120,124-125,127-129,133-134,138-139,141,143-147,151-152,172,175,179,184-203,206,208-210
+  s_17a5063aa38dd4::t_8b44176fce82d5 108-109
+scripts/transcode_segment.py
+  s_17a5063aa38dd4::t_da3ce4e7826bc0 1-61
+toys-media-service/src/main/java/com/toys/video/media/service/TranscodeService.java
+  s_17a5063aa38dd4::t_f5731eb4ef201c 7,14,16,26-27,35-38,46,52-53,65-67,125-131,134-136,138-141,145,147-148,151,172-234,236-266,297,315,323,347-352,354,357,359-360
+  s_17a5063aa38dd4::t_1b0fe89f85efa3 235
+toys-media-service/src/main/java/com/toys/video/media/service/TranscodeAssembler.java
+  s_17a5063aa38dd4::t_f035870dc3ce75 1-146
+toys-media-service/src/main/java/com/toys/video/media/service/SegmentService.java
+  s_17a5063aa38dd4::t_6a4d2a813bd7ed 1-216,218-224,226-281
+  s_17a5063aa38dd4::t_a51d251687fe77 217,225
+toys-api/src/main/java/com/toys/video/api/event/Topics.java
+  s_17a5063aa38dd4::t_ea1075a8b640d1 12-13
+toys-media-service/src/main/java/com/toys/video/media/service/TranscodeCleanupService.java
+  s_17a5063aa38dd4::t_24c40bd57cfd1c 4,6,8,13,20-21,24-25,28-30
+toys-video-service/src/main/java/com/toys/video/video/controller/MediaProxyController.java
+  s_17a5063aa38dd4::t_4d7fa374bc6962 34-35
+  s_17a5063aa38dd4::t_7d5327c4ddd590 36
+scripts/split_media.py
+  s_17a5063aa38dd4::t_d760869ed42a0d 1-92
+toys-media-service/src/main/resources/db/migration/V3__transcode_segments.sql
+  s_17a5063aa38dd4::t_4983776e56b66c 1-21
+toys-media-service/src/main/java/com/toys/video/media/mapper/TranscodeSegmentMapper.java
+  s_17a5063aa38dd4::t_f25c01d474737f 1-9
+scripts/merge_playlists.py
+  s_17a5063aa38dd4::t_eb743742b90df4 1-99
+toys-media-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_19bd00b32be455 49-51
+  s_17a5063aa38dd4::t_30bdbfcce2a8cd 66
+toys-media-service/src/main/java/com/toys/video/media/service/LeaseReaper.java
+  s_17a5063aa38dd4::t_88f3e943308c33 7,9,19-24,31-32,34,36,42-47,49,65-113,116-125
+toys-media-service/src/test/java/com/toys/video/media/service/LeaseReaperTest.java
+  s_17a5063aa38dd4::t_5a9d088b173af1 8,10,33,40-41,44-45,55,60,62,73,75,90-108,114,118
+toys-video-service/src/test/java/com/toys/video/video/controller/MediaProxyWhitelistTest.java
+  s_17a5063aa38dd4::t_2e3cb2e83534bc 1-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e4ffa85d1934fcf77b1553bc0a0d27dec482c4d8",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liugou27 <liugou27@qq.com>"
+    }
+  }
+}

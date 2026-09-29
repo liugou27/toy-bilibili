@@ -1,83 +1,102 @@
-# toys-video
+# toy-bilibili
+
+**English** | [简体中文](README.zh-CN.md)
 
 [![Java 21](https://img.shields.io/badge/Java-21-orange)]() [![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-green)]() [![Spring Cloud Alibaba](https://img.shields.io/badge/Spring%20Cloud%20Alibaba-2025.0.0.0-red)]() [![License: MIT](https://img.shields.io/badge/License-MIT-blue)]()
 
-> 微服务视频平台学习项目:上传(分片直传/秒传/断点续传)→ 风控评级(类型化违规/黑样本/敏感词热更新)→ 人工审核(认领)→ 转码(HLS)→ 播放(Artplayer 弹幕)→ 互动(点赞/收藏/评论/弹幕/关注/处罚)。6 服务 + 69 单测 + 22 步全链路回归。
+> A microservices video platform built for learning — modeled after the core pipeline of Bilibili/YouTube: chunked upload (direct-to-storage / instant dedup / resumable) → risk scoring (typed violations / blacklist samples / hot-reloadable sensitive words) → manual review (claim-based) → transcoding (distributed segment-parallel HLS) → playback (Artplayer + danmaku) → interactions (like / favorite / comment / danmaku / follow / penalties). 6 services, 324 unit tests, 22-step end-to-end regression.
 
-微服务架构的视频平台 MVP(学习项目):**上传 → 自动机审 → 人工审核 → 转码 → 播放** 全链路。
+A microservices video platform MVP covering the full pipeline: **upload → auto screening → manual review → transcode → playback**.
 
-参考 Bilibili/YouTube 的核心链路,重点在微服务整套流程的实践:服务注册与配置中心(Nacos)、网关统一鉴权(Spring Cloud Gateway + JWT)、服务间调用(OpenFeign)、异步事件驱动(RocketMQ)、对象存储(MinIO/S3)、schema-per-service(PostgreSQL)。
+The focus is hands-on practice with the whole microservices stack: service registry & config center (Nacos), unified gateway auth (Spring Cloud Gateway + JWT), inter-service calls (OpenFeign), async event-driven flow (RocketMQ), object storage (MinIO/S3), and schema-per-service (PostgreSQL).
 
-## 架构
+## Architecture
 
 ```
-前端 Vue3 + Vite + Element Plus + hls.js
+Frontend  Vue3 + Vite + Element Plus + hls.js
         │
-   Gateway :8080 ── 路由 / JWT 校验 / CORS / traceId / 统一错误兜底
+   Gateway :8080 ── routing / JWT verification / CORS / traceId / unified error handling
         │
- user:8101     video:8102      moderation:8103    media:8104
- 注册登录JWT    上传/状态机/播放   机审+人工审核       转码 worker
-        │              │               │                │
-        └── PostgreSQL(schema-per-service) ── MinIO(videos/hls) ── RocketMQ 事件 ── Redis ──┘
+ user:8101     video:8102      moderation:8103    media:8104(×N)
+ auth & user   upload/state     auto + manual      transcode cluster
+        │        machine         review            (segment-parallel)
+        └── PostgreSQL (schema-per-service) ── MinIO (videos/hls) ── RocketMQ events ── Redis ─┘
 ```
 
-- 状态机唯一写入方是 video-service;机审/转码服务只通过内部接口请求推进,事件只做触发。
-- 状态流转:`UPLOADED → AUTO_SCREENING → UNDER_REVIEW → APPROVED → TRANSCODING → PUBLISHED`,分支 `REJECTED` / `TRANSCODE_FAILED`(投稿人可重试)。
-- 转码产物为多码率 HLS(master.m3u8 + 480p/720p/1080p)+ 封面,经网关 `/media/**` 代理播放。
+- video-service is the single writer of the video state machine; screening/transcode services only request transitions through internal APIs, events act purely as triggers.
+- State flow: `UPLOADED → AUTO_SCREENING → UNDER_REVIEW → APPROVED → TRANSCODING → PUBLISHED`, with branches to `REJECTED` / `TRANSCODE_FAILED` (uploader can retry).
+- Transcode output is multi-bitrate HLS (master.m3u8 + 480p/720p/1080p) plus a poster, served through the gateway `/media/**` proxy from a private bucket.
 
-## 目录
+## Distributed Transcoding Cluster
 
-| 目录 | 内容 |
+The transcode service is built as a horizontally scalable worker cluster:
+
+- **Lease-based claiming** — every job/segment claims work via a single atomic conditional `UPDATE` (`PENDING/FAILED`, or `RUNNING` with an expired lease). Only one instance in the cluster can win.
+- **Segment-parallel transcoding** — long videos are split at keyframes (lossless `-c copy`, default 60s per segment; short videos skip splitting). Segments become independent sub-jobs dispatched through RocketMQ and transcoded in parallel across instances, then assembled into the final playlists (`EXT-X-DISCONTINUITY` at segment boundaries).
+- **Scale in/out without disruption** — a heartbeat renews the lease while working. If an instance dies or is scaled down, only the segment it was currently transcoding gets re-run (verified: kill -9 mid-transcode re-runs exactly one segment; completed segments keep `attempts=1`). `LeaseReaper` sweeps expired leases as a safety net alongside MQ redelivery.
+- **Fenced writes** — terminal writes are conditioned on the instance's ownership, so a superseded late writer can never corrupt state.
+
+## Repository Layout
+
+| Directory | Contents |
 |---|---|
-| `toys-common` | 统一响应/错误码、全局异常、traceId、JWT、雪花 ID、Python 脚本执行器 |
-| `toys-api` | 跨服务契约:Feign 接口、事件 topic 与 DTO |
-| `toys-gateway` | 网关:路由、鉴权过滤器、CORS、错误出口 |
-| `toys-user-service` | 注册/登录/用户信息 |
-| `toys-video-service` | 上传(MinIO 流式落盘)、状态机、列表/详情、播放量(Redis 缓冲)、搜推扩展点 |
-| `toys-moderation-service` | 机审(FFprobe+抽帧规则)、人工审核后台 API |
-| `toys-media-service` | 转码 worker(虚拟线程、重试 3 次、优雅停机) |
-| `frontend/` | Vue3 单页应用(首页/播放/投稿/我的/审核后台/登录注册) |
-| `scripts/` | Python 媒体脚本(纯标准库):probe_media.py、auto_screen.py、transcode.py |
-| `deploy/` | docker-compose、broker.conf、启动脚本、运维手册 |
-| `docs/` | 设计文档、实施计划 |
+| `toys-common` | Shared response/error model, global exceptions, traceId, JWT, snowflake IDs, Python script runner, idempotency SDK |
+| `toys-api` | Cross-service contracts: Feign interfaces, event topics and DTOs |
+| `toys-gateway` | Gateway: routing, auth filter, CORS, error sink |
+| `toys-user-service` | Register / login / user profile / follow / penalties |
+| `toys-video-service` | Upload (streamed to MinIO), state machine, listings/detail, play counts (Redis-buffered), search & recommendation |
+| `toys-moderation-service` | Auto screening (FFprobe + frame rules), manual review admin API, sensitive-word management |
+| `toys-media-service` | Transcode cluster worker (lease claiming, segment parallelism, assembly, virtual threads) |
+| `toys-risk-service` | Stateless risk scoring engine (typed violations, action PASS/REVIEW/BLOCK) |
+| `frontend/` | Vue3 SPA (home / watch / upload / my videos / review admin / auth) |
+| `scripts/` | Media scripts in pure Python stdlib: probe, screening, split, segment transcode, merge |
+| `deploy/` | docker-compose, Nacos config bootstrap, broker.conf, run scripts, ops manual |
+| `docs/` | Design docs, implementation plan, architecture deep-dive |
 
-## 快速开始
+## Quick Start
 
-环境要求:Java 21、Maven、Node 22、Python 3、ffmpeg、Docker(中间件)、PostgreSQL。
+Requirements: Java 21, Maven, Node 22, Python 3, ffmpeg, Docker (middleware), PostgreSQL.
 
-完整启动步骤、账号、验收清单、故障演练见 **[deploy/README.md](deploy/README.md)**。
+See **[deploy/README.md](deploy/README.md)** for the full walkthrough, accounts, acceptance checklist, and failure drills.
 
 ```bash
-# 中间件
+# Middleware (Nacos / RocketMQ / Redis)
 cd deploy && docker compose up -d && cd .. && ./deploy/start-minio.sh &
 
-# 后端
-export JAVA_HOME=$HOME/Library/Java/JavaVirtualMachines/ms-21.0.12/Contents/Home
+# Push shared config into the Nacos config center (optional but recommended)
+./deploy/nacos-init.sh
+
+# Backend (JAVA_HOME must point to a Java 21 JDK)
 mvn -s deploy/maven-settings.xml -DskipTests package
 for svc in user-service gateway video-service moderation-service media-service; do
   java -jar toys-$svc/target/toys-$svc-0.1.0-SNAPSHOT.jar &
 done
 
-# 前端
+# Frontend
 cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
 
-内置管理员:`admin / admin123`。
+Built-in admin account: `admin / admin123`.
 
-## 设计文档
+## Documentation
 
-- 设计规格:[docs/superpowers/specs/2026-09-25-video-platform-microservices-design.md](docs/superpowers/specs/2026-09-25-video-platform-microservices-design.md)
-- 实施计划:[docs/superpowers/plans/2026-09-25-video-platform-microservices.md](docs/superpowers/plans/2026-09-25-video-platform-microservices.md)
+- Design spec: [docs/superpowers/specs/2026-09-25-video-platform-microservices-design.md](docs/superpowers/specs/2026-09-25-video-platform-microservices-design.md) (Chinese)
+- Implementation plan: [docs/superpowers/plans/2026-09-25-video-platform-microservices.md](docs/superpowers/plans/2026-09-25-video-platform-microservices.md) (Chinese)
+- Backend architecture deep-dive: [docs/backend-architecture.md](docs/backend-architecture.md) (Chinese)
 
-## 分支模型
+## Branching Model
 
-- `main`:稳定分支,保持 CI 绿色(每次 push 自动跑单测+构建)
-- `dev`:日常开发分支,功能完成后合回 main
-- feature 分支:`feat/xxx` 从 dev 切出,完成后 PR → dev → dev 稳定后 PR → main
+- `main`: stable branch, kept CI-green (tests + build run on every push)
+- `dev`: development branch; finished work is merged back to main
+- feature branches: cut `feat/xxx` from dev, then PR → dev → main
 
 ```bash
 git checkout dev && git pull
-git checkout -b feat/your-feature   # 开发
-# ...提交后
-git push -u origin feat/your-feature  # GitHub 上发 PR 合入 dev
+git checkout -b feat/your-feature   # develop
+# ...commit, then
+git push -u origin feat/your-feature  # open a PR into dev on GitHub
 ```
+
+## License
+
+[MIT](LICENSE)

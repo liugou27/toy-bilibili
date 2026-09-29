@@ -49,6 +49,10 @@ toys:
   scripts:
     dir: ${TOYS_SCRIPTS_DIR:/Users/dsy/Desktop/dev/works/toys/scripts}
     python-bin: python3
+  transcode:
+    lease-seconds: 90
+    heartbeat-seconds: 30
+    reap-interval-ms: 30000
 
 management:
   endpoints:

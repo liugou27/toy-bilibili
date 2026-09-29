@@ -27,7 +27,7 @@ Spring Cloud Alibaba 微服务视频平台,覆盖 **上传 → 机审 → 人工
 | toys-user-service | 8101 | user_db | 注册(布隆预检+防刷)、登录(防爆破+BCrypt)、注销、改密、资料(昵称/头像) |
 | toys-video-service | 8102 | video_db | 上传体系、状态机(唯一写入方)、搜推、互动、分区标签、播放量 |
 | toys-moderation-service | 8103 | moderation_db | 文本+画面机审、敏感词库中心(热更新)、人工审核(认领/决策) |
-| toys-media-service | 8104 | media_db | 转码 worker(HLS 多码率+封面)、失败重试、启动恢复 |
+| toys-media-service | 8104(可多实例) | media_db | 转码集群 worker(HLS 多码率+封面)、租约抢占、心跳续期、故障抢回、失败重试 |
 
 ## 3. 核心链路(端到端)
 
@@ -44,7 +44,7 @@ Spring Cloud Alibaba 微服务视频平台,覆盖 **上传 → 机审 → 人工
 ③ 人工:审核后台队列(10s 轮询)→ 认领(软锁 10 分钟,超时自动释放)
    → 详情(原片 presigned 15min + 机审报告结构化)→ 通过/拒绝(硬锁,条件更新)
    → 通过则 Feign 置 APPROVED → video-service 发 VIDEO_APPROVED
-④ 转码:media 消费(幂等)→ Feign 置 TRANSCODING → transcode_jobs 占位(条件更新防并发)
+④ 转码:media 集群消费(同组多实例)→ transcode_jobs 租约抢占(条件更新,PENDING/FAILED 或租约过期的 RUNNING)
    → Python transcode.py(按源高 1080/720/480 档,H.264 CRF23 + AAC,4s 分片 HLS + poster)
    → 产物回传 MinIO hls/{id}/ → Feign 置 PUBLISHED;失败重试 3 次(MQ 重投递)→ TRANSCODE_FAILED
 ⑤ 播放:GET /videos/{id} 返回 /media/hls/{id}/master.m3u8 → 网关代理 MinIO(支持 Range)
@@ -87,14 +87,18 @@ Spring Cloud Alibaba 微服务视频平台,覆盖 **上传 → 机审 → 人工
 
 ### 4.5 media-service(8104)
 
-- 转码串行消费(consumeThread=1,CPU 密集);`TranscodePolicy` 重试策略;transcode_jobs 条件更新占位(PENDING/FAILED→RUNNING)防并发重跑;attempts≥3 终态 TRANSCODE_FAILED(投稿页可重试);`StartupRecovery` 启动回收 RUNNING 孤儿作业;MinIO 操作走 `MinioRetryExecutor`(3 次退避);临时目录用完即删。
+- **集群模型**:同 consumer group 多实例横向扩容,吞吐随实例数线性增长(每实例 consumeThread=1 串行转码,CPU 密集)。
+- **租约抢占**:`UPDATE ... WHERE status IN ('PENDING','FAILED') OR (status='RUNNING' AND lease_until < now())` 原子领取,写入 owner_instance + lease_until + object_key;执行期间心跳线程续期(默认 30s 心跳/90s 租约)。
+- **故障抢回**:`LeaseReaper` 每 30s 扫描租约过期的 RUNNING 作业就地重新派发,与 MQ 重投递互为兜底;抢回时视频已在 TRANSCODING 的状态冲突视为合法续跑。
+- **成功围栏**:作业 SUCCESS 落库限定本实例持有(owner+RUNNING 条件),被抢回的迟到实例写入不生效、结果直接丢弃;作业先 SUCCESS 再视频 PUBLISHED,两步之间崩溃由 skip 分支补偿重推。
+- **重试策略**:`TranscodePolicy`,attempts≥3 终态 TRANSCODE_FAILED(投稿页可重试);`StartupRecovery` 启动时清扫本机残留临时目录;MinIO 操作走 `MinioRetryExecutor`(3 次退避);临时目录用完即删。
 
 ## 5. 数据模型(4 schema,16 表)
 
 - **user_db**:users(id/username/password_hash/role/nickname/avatar)
 - **video_db**:videos(状态机全字段+md5/upload_id/part_size/category/tags/like_count)、video_likes、video_favorites、play_histories、comments、danmaku
 - **moderation_db**:moderation_reports(auto_verdict/auto_report jsonb/decision/claimed_by/claimed_at)、sensitive_words
-- **media_db**:transcode_jobs(status/attempts/max_attempts/error/payload jsonb)
+- **media_db**:transcode_jobs(status/attempts/max_attempts/error/payload jsonb/owner_instance/lease_until/object_key)
 
 ID 全局雪花(`common/Snowflake`,时钟回拨等待);JSON 输出:ID 为字符串(防 JS 精度丢失)、计数为原生 long 数字。
 

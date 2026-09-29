@@ -27,6 +27,15 @@ public class TranscodeJob {
 
     private String error;
 
+    /** 持有本作业的实例标识(主机名+随机后缀),成功回写的围栏条件。 */
+    private String ownerInstance;
+
+    /** 租约到期时间,心跳续期;过期后其他实例可抢回。 */
+    private LocalDateTime leaseUntil;
+
+    /** 原片对象键,租约过期抢回重跑时使用。 */
+    private String objectKey;
+
     /** 转码档位信息(脚本输出)。 */
     @TableField(typeHandler = JsonbTypeHandler.class)
     private String payload;

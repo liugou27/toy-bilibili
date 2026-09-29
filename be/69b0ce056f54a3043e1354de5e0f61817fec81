@@ -1,0 +1,51 @@
+toys-media-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_128e9fb12a9136 1-6,20,25-27,48,56,59-62
+toys-risk-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_128e9fb12a9136 1-6,20
+deploy/nacos-configs/toys-video-service.yml
+  s_17a5063aa38dd4::t_7d1b3cd7bd98f6 1-5
+toys-user-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_128e9fb12a9136 1-6,26,28-30
+deploy/nacos-init.sh
+  s_17a5063aa38dd4::t_ad46cf4510f72f 26
+  s_17a5063aa38dd4::t_c0c6c53823ccce 1-25,27-34
+deploy/nacos-configs/toys-moderation-service.yml
+  s_17a5063aa38dd4::t_4521531557a396 1-5
+deploy/nacos-configs/toys-media-service.yml
+  s_17a5063aa38dd4::t_ee181e5a3227ad 1-12
+toys-gateway/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_128e9fb12a9136 1-6,22,26,91,93
+toys-moderation-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_128e9fb12a9136 1-6,20,27-29,48,55,59
+deploy/nacos-configs/toys-gateway.yml
+  s_17a5063aa38dd4::t_ed0124082ae985 1-5
+toys-media-service/src/main/java/com/toys/video/media/service/TranscodeService.java
+  s_17a5063aa38dd4::t_ec5051ebc154ac 14
+  s_17a5063aa38dd4::t_d9ebe746b6bbd5 271-276
+deploy/nacos-configs/common.yml
+  s_17a5063aa38dd4::t_007d5739e9261a 1-20
+toys-video-service/src/main/resources/application.yml
+  s_17a5063aa38dd4::t_128e9fb12a9136 1-6,22,27-29,48,56,63
+deploy/nacos-configs/toys-user-service.yml
+  s_17a5063aa38dd4::t_23527bd1561785 1-11
+deploy/README.md
+  s_17a5063aa38dd4::t_3ac10c6d0f8cf6 29-32
+docs/backend-architecture.md
+  s_17a5063aa38dd4::t_fddafc1d380094 119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "be69b0ce056f54a3043e1354de5e0f61817fec81",
+  "prompts": {},
+  "sessions": {
+    "s_17a5063aa38dd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "sess_8217cb1b-5949-496b-822a-58c3bd088bd7",
+        "model": "unknown"
+      },
+      "human_author": "liugou27 <liugou27@qq.com>"
+    }
+  }
+}
